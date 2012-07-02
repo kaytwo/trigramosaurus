@@ -4,34 +4,18 @@ import pickle
 
 
 def printmap(s):
-    offset = 0
-    for y in range(12):
-      for x in range(8):
-        if s[offset] >= 1:
-          sys.stdout.write(' ')
-        else:
-          sys.stdout.write('X')
-        offset += 1
-      print ""
-
-
-
-def printascii(s):
-  for letter in s:
-    big = charmap[letter]
-    offset = 0
-    for y in range(12):
-      for x in range(8):
-        if big[offset][0] == 1:
-          sys.stdout.write(' ')
-        else:
-          sys.stdout.write('X')
-        offset += 1
-      print ""
+  offset = 0
+  for y in range(13):
+    for x in range(8):
+      if s[offset] >= 1:
+        sys.stdout.write(' ')
+      else:
+        sys.stdout.write('X')
+      offset += 1
     print ""
 
 def print_prospective(pix):
-  for y in range(12):
+  for y in range(13):
     for x in range(8):
       if pix[x,y] > 0:
         sys.stdout.write(' ')
@@ -42,11 +26,24 @@ def print_prospective(pix):
 class Dinocr:
   charmap_file = open('charmap.pkl','rb')
   charmap = pickle.load(charmap_file)
+  revmap = pickle.load(charmap_file)
 
   def __init__(self,image_filename):
-    self.testimage = Image.open(image_filename)
-    self.sizex,self.sizey = self.testimage.size
-    self.pix = self.testimage.load()
+    f = open(image_filename,'rb')
+    r = png.Reader(bytes = f.read())
+    self.sizex,self.sizey,self.pixels,dc = r.asDirect()
+    self.pix = {}
+    x = 0
+    y = 0
+    for row in self.pixels:
+      x = 0
+      for column in row:
+        self.pix[x,y] = column
+        x += 1
+      y += 1
+    
+    # print `dc`
+    # sys.exit()
 
   def find_first_pixel(self,color=0):
     '''find the first black pixel scanning LR and TB'''
@@ -60,21 +57,21 @@ class Dinocr:
 
   def erase_contiguous(self,x,y):
     '''recursively blank every non-white pixel that is adjacent to this pixel'''
-    self.pix[x,y] = 255
-    if self.pix[x-1,y] != 255:
+    self.pix[x,y] = 1
+    if self.pix[x-1,y] != 1:
       self.erase_contiguous(x-1,y)
-    if self.pix[x+1,y] != 255:
+    if self.pix[x+1,y] != 1:
       self.erase_contiguous(x+1,y)
-    if self.pix[x,y-1] != 255:
+    if self.pix[x,y-1] != 1:
       self.erase_contiguous(x,y-1)
-    if self.pix[x,y+1] != 255:
+    if self.pix[x,y+1] != 1:
       self.erase_contiguous(x,y+1)
 
   def erase_character_area(self,x,y):
-    '''blank the 8x12 area starting at (x,y)'''
-    for y1 in range(12):
+    '''blank the 8x13 area starting at (x,y)'''
+    for y1 in range(13):
       for x1 in range(8):
-        self.pix[x+x1,y+y1] = 255
+        self.pix[x+x1,y+y1] = 1
 
   def match_with_character(self,x,y,origin=False):
     '''
@@ -84,42 +81,40 @@ class Dinocr:
     colored character found, and we must find the prospective origin
     to make the comparison
     '''
-    for letter in Dinocr.charmap.keys():
-      if origin == False:
-        offsetx,offsety = Dinocr.charmap[letter][1:]
-        letter_start_x = x - offsetx
-        letter_start_y = y-offsety
+    if origin == True:
+      new_char = []
+      for y1 in range(13):
+        for x1 in range(8):
+          new_char.append(self.pix[x + x1,
+                              y + y1])
+      if tuple(new_char) in Dinocr.revmap:
+        self.erase_character_area(x,y)
+        return Dinocr.revmap[tuple(new_char)],x,y
       else:
-        letter_start_x = x
-        letter_start_y = y
+        return ' ',-1,-1
+    
+    # origin == False
+    for letter in Dinocr.charmap.keys():
+      offsetx,offsety = Dinocr.charmap[letter][1:]
+      letter_start_x = x - offsetx
+      letter_start_y = y-offsety
       if letter_start_x < 0 or letter_start_y < 0:
         continue
       # print("searching for exact match with %s at %d,%d" % 
       #       (letter,letter_start_x,letter_start_y))
       new_char = []
-      for y1 in range(12):
+      for y1 in range(13):
         for x1 in range(8):
           new_char.append(self.pix[letter_start_x + x1,
                               letter_start_y + y1])
       # printmap(new_char)
       if all([(new_char[a] > 0) == 
               (Dinocr.charmap[letter][0][a] > 0) 
-              for a in range(8*12)]):
+              for a in range(8*13)]):
         # print "found character",letter
-        if origin == True:
-          # print "blanking area at (%d,%d)" % (x,y)
-          self.erase_character_area(x,y)
-        return letter,letter_start_x,letter_start_y
-    '''
-    todo: if this was origin=False and we didn't find a character,
-    we either found (a) a callout, and we should erase it, or
-    (b) a character not in our key, this should be fixed but 
-    for now we will just blank it too.
-    '''
-    if origin == False:
-      self.erase_contiguous(x,y)
-      return '',-1,-1
-    return ' ',-1,-1
+        return letter, letter_start_x,letter_start_y
+    self.erase_contiguous(x,y)
+    return '',-1,-1
 
 
   def run(self):
@@ -148,99 +143,9 @@ class Dinocr:
       print  ''.join(lines[-1])
     sys.exit()
 
-firstpanel = Dinocr('0.png')
+firstpanel = Dinocr('2.png')
 firstpanel.run()
     
-
-testimage = Image.open('0.png')
-sizex,sizey = testimage.size
-pix = testimage.load()
-# find the top leftmost black pixel
-this_line = []
-for y in range(sizey):
-  for x in range(sizex):
-    if pix[x,y] != 0:
-      continue
-    print("found top leftmost black pixel at %d,%d" % (x,y))
-    for letter in charmap.keys():
-      offsetx,offsety = charmap[letter][1:]
-      letter_start_x = x - offsetx
-      letter_start_y = y-offsety
-      if letter_start_x < 0 or letter_start_y < 0:
-        continue
-      print("searching for exact match with %s at %d,%d" % 
-            (letter,letter_start_x,letter_start_y))
-      new_char = []
-      for y1 in range(12):
-        for x1 in range(8):
-          new_char.append(pix[letter_start_x + x1,
-                              letter_start_y + y1])
-      printmap(new_char)
-      if all([(new_char[a] > 0) == (charmap[letter][0][a] > 0) for a in range(8*12)]):
-        print "found character",letter
-        this_line.append(letter)
-
-    sys.exit()
-
-# for each letter in the charmap:
-
-# crop to the box relative to first pixel in the prospective letter
-
-# test for equality, if so, print origin coord and letter
-
-sys.exit()
-
-def create_charmap():
-    keychars = r"""`~1234567890-=!@#$%^&*()_+qwertyuiop[]\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:"zxcvbnm,./ZXCVBNM<>?"""
-    keyimage = Image.open("normal.png")
-    pix = keyimage.load()
-    startx = 0
-    starty = 0
-    charnum = 0
-    charmap = {}
-    totalchars = len(keychars)
-
-
-    while (starty <= 44):
-      while (startx <= 561):
-        charstring = []
-        for y in range(0,12):
-          for x in range(0,8):
-            charstring.append(pix[startx + x,starty + y])
-        if all(charstring):
-          break
-        charmap[keychars[charnum]] = charstring
-        charnum = charnum + 1
-        if charnum == totalchars:
-          return charmap
-        startx = startx + 16
-      starty = starty + 14
-      startx = 0
-charmap = create_charmap()
-charmap_output = open('charmap.pkl','wb')
-import pickle
-pickle.dump(charmap,charmap_output)
-charmap_output.close()
-sys.exit()
-
-def printascii(s):
-  for letter in s:
-    big = charmap[letter]
-    offset = 0
-    for y in range(12):
-      for x in range(8):
-        if big[offset] == 1:
-          sys.stdout.write(' ')
-        else:
-          sys.stdout.write('X')
-        offset += 1
-      print ""
-    print ""
-
-printascii('chris')
-
-sys.exit()
-
 cutpoints = []
 cutpoints.append((0,0,242,242))
 cutpoints.append((242,0,374,242))

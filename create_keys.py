@@ -16,7 +16,7 @@ def create_charmap():
       while (startx <= 561):
         charstring = []
         firstx = -1
-        for y in range(0,12):
+        for y in range(0,13):
           for x in range(0,8):
             charstring.append(pix[startx + x,starty + y])
             if firstx == -1 and pix[startx + x,starty + y] == 0:
@@ -32,9 +32,14 @@ def create_charmap():
       starty = starty + 14
       startx = 0
 charmap = create_charmap()
+revmap = {}
+for key in charmap.keys():
+  charstring = charmap[key][0]
+  revmap[tuple(charstring)] = key
 charmap_output = open('charmap.pkl','wb')
 import pickle
 pickle.dump(charmap,charmap_output)
+pickle.dump(revmap,charmap_output)
 charmap_output.close()
 sys.exit()
 
@@ -42,7 +47,7 @@ def printascii(s):
   for letter in s:
     big = charmap[letter]
     offset = 0
-    for y in range(12):
+    for y in range(13):
       for x in range(8):
         if big[offset][0] == 1:
           sys.stdout.write(' ')
