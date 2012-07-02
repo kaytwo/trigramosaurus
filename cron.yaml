@@ -1,0 +1,4 @@
+cron:
+- description: qwantz.com comic download and process
+  url: /check
+  schedule: every 5 minutes
