@@ -38,10 +38,119 @@ def print_prospective(pix):
       else:
         sys.stdout.write('X')
     print ""
-  
+ 
+class Dinocr:
+  charmap_file = open('charmap.pkl','rb')
+  charmap = pickle.load(charmap_file)
 
-charmap_file = open('charmap.pkl','rb')
-charmap = pickle.load(charmap_file)
+  def __init__(self,image_filename):
+    self.testimage = Image.open(image_filename)
+    self.sizex,self.sizey = self.testimage.size
+    self.pix = self.testimage.load()
+
+  def find_first_pixel(self,color=0):
+    '''find the first black pixel scanning LR and TB'''
+    this_line = []
+    for y in range(self.sizey):
+      for x in range(self.sizex):
+        if self.pix[x,y] == color:
+          # print("found top leftmost black pixel at %d,%d" % (x,y))
+          return x,y
+    return -1,-1
+
+  def erase_contiguous(self,x,y):
+    '''recursively blank every non-white pixel that is adjacent to this pixel'''
+    self.pix[x,y] = 255
+    if self.pix[x-1,y] != 255:
+      self.erase_contiguous(x-1,y)
+    if self.pix[x+1,y] != 255:
+      self.erase_contiguous(x+1,y)
+    if self.pix[x,y-1] != 255:
+      self.erase_contiguous(x,y-1)
+    if self.pix[x,y+1] != 255:
+      self.erase_contiguous(x,y+1)
+
+  def erase_character_area(self,x,y):
+    '''blank the 8x12 area starting at (x,y)'''
+    for y1 in range(12):
+      for x1 in range(8):
+        self.pix[x+x1,y+y1] = 255
+
+  def match_with_character(self,x,y,origin=False):
+    '''
+    with origin = true, (x,y) denotes the origin of where we expect
+    the character to be; 
+    with origin = false, (x,y) is the first 
+    colored character found, and we must find the prospective origin
+    to make the comparison
+    '''
+    for letter in Dinocr.charmap.keys():
+      if origin == False:
+        offsetx,offsety = Dinocr.charmap[letter][1:]
+        letter_start_x = x - offsetx
+        letter_start_y = y-offsety
+      else:
+        letter_start_x = x
+        letter_start_y = y
+      if letter_start_x < 0 or letter_start_y < 0:
+        continue
+      # print("searching for exact match with %s at %d,%d" % 
+      #       (letter,letter_start_x,letter_start_y))
+      new_char = []
+      for y1 in range(12):
+        for x1 in range(8):
+          new_char.append(self.pix[letter_start_x + x1,
+                              letter_start_y + y1])
+      # printmap(new_char)
+      if all([(new_char[a] > 0) == 
+              (Dinocr.charmap[letter][0][a] > 0) 
+              for a in range(8*12)]):
+        # print "found character",letter
+        if origin == True:
+          # print "blanking area at (%d,%d)" % (x,y)
+          self.erase_character_area(x,y)
+        return letter,letter_start_x,letter_start_y
+    '''
+    todo: if this was origin=False and we didn't find a character,
+    we either found (a) a callout, and we should erase it, or
+    (b) a character not in our key, this should be fixed but 
+    for now we will just blank it too.
+    '''
+    if origin == False:
+      self.erase_contiguous(x,y)
+      return '',-1,-1
+    return ' ',-1,-1
+
+
+  def run(self):
+    lines = []
+    while True:
+      startx,starty = self.find_first_pixel()
+      if startx < 0:
+        break
+      letter, originx,originy = self.match_with_character(startx,starty)
+      if letter == '':
+        continue
+      # found a text block: scan for anything that aligns with
+      # this text
+      lines.append([])
+      firstx,firsty = originx % 8,originy
+      while firsty < self.sizey - 13:
+        while firstx  < self.sizex - 8:
+          this_character = self.match_with_character(firstx,firsty,origin=True)[0]
+          lines[-1].append(this_character)
+          firstx += 8
+        lines[-1].append('\n')
+        firsty += 13
+        firstx = originx % 8
+
+
+      print  ''.join(lines[-1])
+    sys.exit()
+
+firstpanel = Dinocr('0.png')
+firstpanel.run()
+    
 
 testimage = Image.open('0.png')
 sizex,sizey = testimage.size
