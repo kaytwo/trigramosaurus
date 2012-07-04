@@ -87,7 +87,7 @@ class Dinocr:
       for y1 in range(13):
         for x1 in range(8):
           new_char.append(self.pix[x + x1,
-                              y + y1])
+                                   y + y1])
       if tuple(new_char) in Dinocr.revmap:
         self.erase_character_area(x,y)
         return Dinocr.revmap[tuple(new_char)],x,y
@@ -172,5 +172,3 @@ if __name__ == '__main__':
     for line in lines:
       print "someone said:"
       print ''.join(line).rstrip()
-
-
