@@ -1,4 +1,4 @@
-import Image,png
+import png
 import sys
 import pickle
 
@@ -28,9 +28,9 @@ class Dinocr:
   charmap = pickle.load(charmap_file)
   revmap = pickle.load(charmap_file)
 
-  def __init__(self,image_filename):
-    f = open(image_filename,'rb')
-    r = png.Reader(bytes = f.read())
+  def __init__(self,image):
+    
+    r = png.Reader(bytes = image)
     self.sizex,self.sizey,self.pixels,dc = r.asDirect()
     self.pix = {}
     x = 0
@@ -42,8 +42,6 @@ class Dinocr:
         x += 1
       y += 1
     
-    # print `dc`
-    # sys.exit()
 
   def find_first_pixel(self,color=0):
     '''find the first black pixel scanning LR and TB'''
@@ -56,7 +54,10 @@ class Dinocr:
     return -1,-1
 
   def erase_contiguous(self,x,y):
-    '''recursively blank every non-white pixel that is adjacent to this pixel'''
+    '''
+    recursively blank every non-white pixel that is adjacent to this pixel
+    very large colored blobs might exceed the recursion depth
+    '''
     self.pix[x,y] = 1
     if self.pix[x-1,y] != 1:
       self.erase_contiguous(x-1,y)
@@ -139,33 +140,37 @@ class Dinocr:
         firsty += 13
         firstx = originx % 8
 
+    return lines
 
-      print  ''.join(lines[-1])
-    sys.exit()
+if __name__ == '__main__':
+  import Image, StringIO
+  
+  cutpoints = []
+  cutpoints.append((0,0,242,242))
+  cutpoints.append((242,0,374,242))
+  cutpoints.append((374,0,735,242))
+  cutpoints.append((0,242,194,500))
+  cutpoints.append((194,242,492,500))
+  cutpoints.append((492,242,735,500))
 
-firstpanel = Dinocr('2.png')
-firstpanel.run()
-    
-cutpoints = []
-cutpoints.append((0,0,242,242))
-cutpoints.append((242,0,374,242))
-cutpoints.append((374,0,735,242))
-cutpoints.append((0,242,194,500))
-cutpoints.append((194,242,492,500))
-cutpoints.append((492,242,735,500))
-
-out = Image.new('1',(735,500),255)
-im1 = Image.open("comic_mask.bmp")
-im2 = Image.open("comic_test.png")
-im1 = im1.convert('1')
-im2 = im2.convert('1')
-out.paste(im2,None,im1)
-panels = []
-for panel in cutpoints:
+  out = Image.new('1',(735,500),255)
+  im1 = Image.open("comic_mask.bmp")
+  im2 = Image.open("comic_test.png")
+  im1 = im1.convert('1')
+  im2 = im2.convert('1')
+  out.paste(im2,None,im1)
+  panels = []
+  for panel in cutpoints:
     panels.append(out.crop(panel))
 
-for offset in range(len(panels)):
-    panels[offset].save(str(offset)+'.png')
+  for offset in range(len(panels)):
+    this_panel = panels[offset]
+    f = StringIO.StringIO()
+    this_panel.save(f,'png')
+    lines = Dinocr(f.getvalue()).run()
+    print "panel",offset+1,"text"
+    for line in lines:
+      print "someone said:"
+      print ''.join(line).rstrip()
 
-out.save('result.png')
 
