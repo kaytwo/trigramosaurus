@@ -14,6 +14,15 @@ def printmap(s):
       offset += 1
     print ""
 
+def print_prospective_bold(img,x,y):
+  for y1 in range(13):
+    for x1 in range(9):
+      if img[x+x1,y+y1] > 0:
+        sys.stdout.write(' ')
+      else:
+        sys.stdout.write('X')
+    print ""
+
 def print_prospective(pix):
   for y in range(13):
     for x in range(8):
@@ -141,9 +150,11 @@ class Dinocr:
           new_char.append(self.pix[x + x1,
                                    y + y1])
       if tuple(new_char) in Dinocr.bold_revmap:
+        # print "found bold character",Dinocr.bold_revmap[tuple(new_char)],"at",str(x),str(y)
         self.erase_bold_character_area(x,y)
         return Dinocr.bold_revmap[tuple(new_char)],x,y
       else:
+        # print_prospective_bold(self.pix,x,y)
         return ' ',-1,-1
     
     # origin == False
@@ -173,10 +184,15 @@ class Dinocr:
     line = []
     firstx,firsty = originx % 8,originy
     while firsty < self.sizey - 13:
+      text_this_line = False
       while firstx  < self.sizex - 8:
         this_character = self.match_with_character(firstx,firsty,origin=True)[0]
+        if this_character != '' and this_character != ' ':
+          text_this_line = True
         line.append(this_character)
         firstx += 8
+      if text_this_line == False:
+        return line
       line.append('\n')
       firsty += 13
       firstx = originx % 8
@@ -187,10 +203,15 @@ class Dinocr:
     line = []
     firstx,firsty = originx % 9,originy
     while firsty < self.sizey - 13:
+      text_this_line = False
       while firstx  < self.sizex - 9:
         this_character = self.match_with_bold_character(firstx,firsty,origin=True)[0]
+        if this_character != '' and this_character != ' ':
+          text_this_line = True
         line.append(this_character)
         firstx += 9
+      if text_this_line == False:
+        return line
       line.append('\n')
       firsty += 13
       firstx = originx % 9
@@ -210,6 +231,7 @@ class Dinocr:
       if letter != '':
         lines.append(self.find_aligned_bold(originx,originy))
       if letter == '':
+        # print "had to erase at",startx,starty
         self.erase_contiguous(startx,starty)
         continue
 
