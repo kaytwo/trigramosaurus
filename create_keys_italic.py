@@ -3,23 +3,25 @@ import sys
 
 def create_charmap():
     keychars = r"""`~1234567890-=!@#$%^&*()_+qwertyuiop[]\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:"zxcvbnm,./ZXCVBNM<>?"""
-    keyimage = Image.open("normal.png")
+    keyimage = Image.open("italic.png")
     pix = keyimage.load()
-    startx = 0
+    startx = 1
     starty = 0
     charnum = 0
     charmap = {}
     totalchars = len(keychars)
+    y_offset = [3,3,3,2,2,2,1,1,1,0,0,-1,-1]
 
 
     while (starty <= 44):
-      while (startx <= 561):
+      while (startx <= 565):
         charstring = []
         firstx = -1
         for y in range(0,13):
           for x in range(0,8):
-            charstring.append(pix[startx + x,starty + y])
-            if firstx == -1 and pix[startx + x,starty + y] == 0:
+            print "adding pixel at",startx + x + y_offset[y],starty + y
+            charstring.append(pix[startx + x + y_offset[y],starty + y ])
+            if firstx == -1 and pix[startx + x + y_offset[y],starty + y] == 0:
               firstx = x
               firsty = y
         if all(charstring):
@@ -30,18 +32,17 @@ def create_charmap():
           return charmap
         startx = startx + 16
       starty = starty + 14
-      startx = 0
+      startx = 1
 charmap = create_charmap()
 revmap = {}
 for key in charmap.keys():
   charstring = charmap[key][0]
   revmap[tuple(charstring)] = key
-charmap_output = open('charmap.pkl','wb')
+charmap_output = open('charmap_italic.pkl','wb')
 import pickle
 pickle.dump(charmap,charmap_output)
 pickle.dump(revmap,charmap_output)
 charmap_output.close()
-sys.exit()
 
 def printascii(s):
   for letter in s:
@@ -49,7 +50,7 @@ def printascii(s):
     offset = 0
     for y in range(13):
       for x in range(8):
-        if big[offset][0] == 1:
+        if big[0][offset] == 1:
           sys.stdout.write(' ')
         else:
           sys.stdout.write('X')
