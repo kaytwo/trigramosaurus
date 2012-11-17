@@ -18,8 +18,12 @@ def create_charmap():
         firstx = -1
         for y in range(0,13):
           for x in range(0,9):
-            charstring.append(pix[startx + x,starty + y])
-            if firstx == -1 and pix[startx + x,starty + y] == 0:
+            if pix[startx+x,starty+y][0] > 0:
+              thispixel = 1
+            else:
+              thispixel = 0
+            charstring.append(thispixel)
+            if firstx == -1 and thispixel == 0:
               firstx = x
               firsty = y
         if all(charstring):
@@ -56,7 +60,7 @@ def printascii(s):
       print ""
     print ""
 
-printascii('chris')
+printascii('D:W')
 
 sys.exit()
 

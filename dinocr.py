@@ -1,7 +1,7 @@
 import png
 import sys
 import pickle
-
+from collections import defaultdict
 
 def printmap(s):
   offset = 0
@@ -52,7 +52,8 @@ class Dinocr:
     
     r = png.Reader(bytes = image)
     self.sizex,self.sizey,self.pixels,dc = r.asDirect()
-    self.pix = {}
+    self.pix = defaultdict(lambda:int(1))
+    # self.pix = {}
     x = 0
     y = 0
     for row in self.pixels:
@@ -212,6 +213,8 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
+          thispixel = self.pix[x+x1,y+y1]
+          # print thispixel
           new_char.append(self.pix[x + x1,
                                    y + y1])
       if tuple(new_char) in Dinocr.bold_revmap:
@@ -294,8 +297,6 @@ class Dinocr:
       letter, originx,originy = self.match_with_character(startx,starty)
       if letter == '':
         letter, originx,originy = self.match_with_italic_character(startx,starty)
-        if letter != '' and letter != ' ':
-          print "found italic letter",letter
       if letter != '':
         lines.append(self.find_aligned(originx,originy))
       letter, originx,originy = self.match_with_bold_character(startx,starty)
@@ -319,16 +320,25 @@ if __name__ == '__main__':
   cutpoints.append((194,242,492,500))
   cutpoints.append((492,242,735,500))
 
+  if len(sys.argv) > 1:
+    imgname = sys.argv[1]
+    print imgname
+  else: imgname = "test_italic.png"
   out = Image.new('1',(735,500),255)
   im1 = Image.open("comic_mask.bmp")
-  im2 = Image.open("test_italic.png")
+  im2 = Image.open(imgname)
   im1 = im1.convert('1')
+  # convert to b&w (lose devil color):
+  im2 = im2.convert("L")
+  im2 = Image.eval(im2, lambda px: 255 if px == 255 else 0)
+  
   im2 = im2.convert('1')
   out.paste(im2,None,im1)
+  
   panels = []
-  panels.append(out.crop(cutpoints[4]))
-  # for panel in cutpoints:
-  #   panels.append(out.crop(panel))
+  # panels.append(out.crop(cutpoints[4]))
+  for panel in cutpoints:
+    panels.append(out.crop(panel))
 
   for offset in range(len(panels)):
     this_panel = panels[offset]
@@ -337,5 +347,7 @@ if __name__ == '__main__':
     lines = Dinocr(f.getvalue()).run()
     print "panel",offset+1,"text"
     for line in lines:
-      print "someone said:"
-      print ''.join(line).rstrip()
+      thisline = ''.join(line)
+      words = thisline.split()
+      print ' '.join(words)
+      # print ''.join(line).rstrip()
