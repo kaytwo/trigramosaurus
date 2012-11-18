@@ -376,6 +376,18 @@ class Dinocr:
         c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
     db.commit()
 
+  def choose_random_trigram(self):
+    import random
+    ''' return a trigram, trigramosaurus style'''
+    entire_comic = []
+    for panel in self.panel_texts:
+      for line in panel:
+        entire_comic.append(line)
+    comic_words = ' '.join(entire_comic).split()
+    trigram_start = random.randint(0,len(comic_words)-3)
+    trigram = ' '.join(comic_words[trigram_start:trigram_start+3])
+    return trigram
+
 if __name__ == '__main__':
   if len(sys.argv) > 1:
     filename = sys.argv[1]
@@ -383,4 +395,4 @@ if __name__ == '__main__':
     filename = "test_bold_italic.png"
   d = Dinocr(filename)
   # d.store_comic_to_db()
-  d.print_comic()
+  print d.choose_random_trigram()
