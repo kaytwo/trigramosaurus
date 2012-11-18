@@ -77,17 +77,19 @@ class Dinocr:
   def erase_contiguous(self,x,y):
     '''
     recursively blank every non-white pixel that is adjacent to this pixel
-    very large colored blobs might exceed the recursion depth
     '''
-    self.pix[x,y] = 1
-    if self.pix[x-1,y] != 1:
-      self.erase_contiguous(x-1,y)
-    if self.pix[x+1,y] != 1:
-      self.erase_contiguous(x+1,y)
-    if self.pix[x,y-1] != 1:
-      self.erase_contiguous(x,y-1)
-    if self.pix[x,y+1] != 1:
-      self.erase_contiguous(x,y+1)
+    pending_wipe = [(x,y)]
+    while len(pending_wipe) > 0:
+      x,y = pending_wipe.pop()
+      self.pix[x,y] = 1
+      if self.pix[x-1,y] != 1:
+        pending_wipe.append((x-1,y))
+      if self.pix[x+1,y] != 1:
+        pending_wipe.append((x+1,y))
+      if self.pix[x,y-1] != 1:
+        pending_wipe.append((x,y-1))
+      if self.pix[x,y+1] != 1:
+        pending_wipe.append((x,y+1))
 
   def erase_bold_character_area(self,x,y):
     '''blank the 9x13 area starting at (x,y)'''
@@ -310,7 +312,7 @@ class Dinocr:
     return lines
 
 if __name__ == '__main__':
-  import Image, StringIO
+  import Image, StringIO, sqlite3
   
   cutpoints = []
   cutpoints.append((0,0,242,242))
@@ -322,7 +324,6 @@ if __name__ == '__main__':
 
   if len(sys.argv) > 1:
     imgname = sys.argv[1]
-    print imgname
   else: imgname = "test_italic.png"
   out = Image.new('1',(735,500),255)
   im1 = Image.open("comic_mask.bmp")
@@ -340,14 +341,21 @@ if __name__ == '__main__':
   for panel in cutpoints:
     panels.append(out.crop(panel))
 
-  for offset in range(len(panels)):
-    this_panel = panels[offset]
+  db = sqlite3.connect('test.db')
+  c = db.cursor()
+  c.execute("insert into comics values(NULL,'%s')" % imgname)
+  c.execute("select last_insert_rowid()");
+  comic_id = c.fetchone()[0]
+  for panel_num in range(len(panels)):
+    this_panel = panels[panel_num]
     f = StringIO.StringIO()
     this_panel.save(f,'png')
     lines = Dinocr(f.getvalue()).run()
-    print "panel",offset+1,"text"
-    for line in lines:
-      thisline = ''.join(line)
-      words = thisline.split()
-      print ' '.join(words)
-      # print ''.join(line).rstrip()
+    print "panel",panel_num+1,"text"
+    for line_num in range(len(lines)):
+      thisline = ''.join(lines[line_num])
+      words = ' '.join(thisline.split())
+      escaped_words = words.replace("'","''")
+      c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
+      # print words
+  db.commit()
