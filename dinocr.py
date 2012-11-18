@@ -2,6 +2,9 @@ import png
 import sys
 import pickle
 from collections import defaultdict
+import Image, StringIO, sqlite3
+
+''' helper functions'''
 
 def printmap(s):
   offset = 0
@@ -48,8 +51,7 @@ class Dinocr:
 
   italic_offset = [3,3,3,2,2,2,1,1,1,0,0,-1,-1]
 
-  def __init__(self,image):
-    
+  def read_panel(self,image):
     r = png.Reader(bytes = image)
     self.sizex,self.sizey,self.pixels,dc = r.asDirect()
     self.pix = defaultdict(lambda:int(1))
@@ -62,7 +64,7 @@ class Dinocr:
         self.pix[x,y] = column
         x += 1
       y += 1
-    
+   
 
   def find_first_pixel(self,color=0):
     '''find the first black pixel scanning LR and TB'''
@@ -290,7 +292,7 @@ class Dinocr:
     return line
  
 
-  def run(self):
+  def ocr_current_panel(self):
     lines = []
     while True:
       startx,starty = self.find_first_pixel()
@@ -308,54 +310,77 @@ class Dinocr:
         # print "had to erase at",startx,starty
         self.erase_contiguous(startx,starty)
         continue
+    retlines = []
+    for line_num in range(len(lines)):
+        thisline = ''.join(lines[line_num])
+        words = ' '.join(thisline.split())
+        retlines.append(words)
+    return retlines
 
-    return lines
+
+
+  def __init__(self,filename):
+    self.panel_texts = []
+    self.imgname = filename
+    cutpoints = []
+    cutpoints.append((0,0,242,242))
+    cutpoints.append((242,0,374,242))
+    cutpoints.append((374,0,735,242))
+    cutpoints.append((0,242,194,500))
+    cutpoints.append((194,242,492,500))
+    cutpoints.append((492,242,735,500))
+
+    out = Image.new('1',(735,500),255)
+    im1 = Image.open("comic_mask.bmp")
+    im2 = Image.open(filename)
+    im1 = im1.convert('1')
+    # convert to b&w (lose devil color):
+    im2 = im2.convert("L")
+    im2 = Image.eval(im2, lambda px: 255 if px == 255 else 0)
+    
+    im2 = im2.convert('1')
+    out.paste(im2,None,im1)
+    
+    self.panels = []
+    # panels.append(out.crop(cutpoints[4]))
+    for panel in cutpoints:
+      self.panels.append(out.crop(panel))
+
+    '''ocr all 6 panels and add the line-by-line info to panel_texts'''
+    for panel_num in range(len(self.panels)):
+      this_panel = self.panels[panel_num]
+      f = StringIO.StringIO()
+      this_panel.save(f,'png')
+      self.read_panel(f.getvalue())
+      lines = self.ocr_current_panel()
+      self.panel_texts.append(lines)
+
+  def print_comic(self):
+    for pnum in range(len(self.panel_texts)):
+      print "panel %d" % (pnum+1)
+      for line in range(len(self.panel_texts[pnum])):
+        print self.panel_texts[pnum][line]
+
+  def store_comic_to_db(self,dbfile='comic.db'):
+    '''writes comic to comic.db'''
+    db = sqlite3.connect(dbfile)
+    c = db.cursor()
+    ''' TODO: create tables if file is empty'''
+    c.execute("insert into comics values(NULL,'%s')" % self.imgname)
+    c.execute("select last_insert_rowid()");
+    comic_id = c.fetchone()[0]
+    for panel_num in range(len(self.panel_texts)):
+      this_panel = self.panel_texts[panel_num]
+      for line_num in range(len(this_panel)):
+        escaped_words = this_panel[line_num].replace("'","''")
+        c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
+    db.commit()
 
 if __name__ == '__main__':
-  import Image, StringIO, sqlite3
-  
-  cutpoints = []
-  cutpoints.append((0,0,242,242))
-  cutpoints.append((242,0,374,242))
-  cutpoints.append((374,0,735,242))
-  cutpoints.append((0,242,194,500))
-  cutpoints.append((194,242,492,500))
-  cutpoints.append((492,242,735,500))
-
   if len(sys.argv) > 1:
-    imgname = sys.argv[1]
-  else: imgname = "test_italic.png"
-  out = Image.new('1',(735,500),255)
-  im1 = Image.open("comic_mask.bmp")
-  im2 = Image.open(imgname)
-  im1 = im1.convert('1')
-  # convert to b&w (lose devil color):
-  im2 = im2.convert("L")
-  im2 = Image.eval(im2, lambda px: 255 if px == 255 else 0)
-  
-  im2 = im2.convert('1')
-  out.paste(im2,None,im1)
-  
-  panels = []
-  # panels.append(out.crop(cutpoints[4]))
-  for panel in cutpoints:
-    panels.append(out.crop(panel))
-
-  db = sqlite3.connect('test.db')
-  c = db.cursor()
-  c.execute("insert into comics values(NULL,'%s')" % imgname)
-  c.execute("select last_insert_rowid()");
-  comic_id = c.fetchone()[0]
-  for panel_num in range(len(panels)):
-    this_panel = panels[panel_num]
-    f = StringIO.StringIO()
-    this_panel.save(f,'png')
-    lines = Dinocr(f.getvalue()).run()
-    print "panel",panel_num+1,"text"
-    for line_num in range(len(lines)):
-      thisline = ''.join(lines[line_num])
-      words = ' '.join(thisline.split())
-      escaped_words = words.replace("'","''")
-      c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
-      # print words
-  db.commit()
+    filename = sys.argv[1]
+  else:
+    filename = "test_bold_italic.png"
+  d = Dinocr(filename)
+  # d.store_comic_to_db()
+  d.print_comic()
