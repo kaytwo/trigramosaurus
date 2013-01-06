@@ -79,7 +79,15 @@ if __name__ == "__main__":
   if d.erased_pixels > 2000:
     error_out('large amount of erases in a new comic',True)
   trigram = d.choose_random_trigram()
-  # result = post_to_twitter(trigram)
+  anything = False
+  for word in trigram.split():
+    if any([x.isalnum() for x in word]):
+      anything = True
+      break
+  if not anything:
+    error_out('words in this trigram are weird: %s' % trigram,True)
+  result = post_to_twitter(trigram)
+  print trigram
   infofile = open('trigramosaurus.txt','w')
   infofile.write(str(comicnum))
   infofile.close()
