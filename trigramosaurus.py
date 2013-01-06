@@ -5,7 +5,10 @@ from os import system
 import sys
 import re
 import twitter
-from pprint import pprint
+
+import smtplib
+from email.mime.text import MIMEText
+
 
 '''
 script to automatically update trigramosaurus
@@ -22,12 +25,27 @@ Dinocr
 post to twitter
 '''
 
-def error_out(msg):
-  print msg
+
+
+def error_out(msg,alert=False):
+  if alert:
+    emsg = MIMEText(msg)
+    emsg['Subject'] = 'trigramosaurus error!'
+    emsg['From'] = 'kaytwo@kaytwo.org'
+    emsg['To'] = 'kaytwo@gmail.com'
+    # this smtp server might change but oh well...
+    s = smtplib.SMTP('gmail-smtp-in.l.google.com')
+    s.sendmail(emsg['From'],[emsg['To']],emsg.as_string())
+  else:
+    print msg
   sys.exit()
 
 def post_to_twitter(msg):
-  oauth_token, oauth_secret = twitter.read_token_file('kaytwo_credentials')
+  '''
+  todo:
+  check if trigramosaurus has been updated today, if so, skip updating.
+  '''
+  oauth_token, oauth_secret = twitter.read_token_file('trigramosaurus_credentials')
   consumer_key, consumer_secret = twitter.read_token_file('app_credentials')
   t = twitter.Twitter(
             auth=twitter.OAuth(oauth_token, oauth_secret,
@@ -47,15 +65,21 @@ if __name__ == "__main__":
   today_comic = urlopen('http://www.qwantz.com/index.php')
   result = today_comic.read()
   todayparsed = fromstring(result)
-  comicurl = todayparsed.cssselect('img.comic')[0].attrib['src']
-  comicnum = int(re.findall(r'comic2-([0-9]+)\.png',comicurl)[0])
+  try:
+    comicurl = todayparsed.cssselect('img.comic')[0].attrib['src']
+    comicnum = int(re.findall(r'comic2-([0-9]+)\.png',comicurl)[0])
+  except IndexError:
+    error_out("failed parsing qwantz.com",True)
   if comicnum == prev_comic:
     error_out("same comic")
   if comicnum != prev_comic + 1:
-    error_out("unexpected comic number: previous was %d, this was %d" % (prev_comic,comicnum))
+    error_out("unexpected comic number: previous was %d, this was %d" % (prev_comic,comicnum),True)
   system('curl %s > /tmp/comic.png' % comicurl)
-  trigram = Dinocr('/tmp/comic.png').choose_random_trigram()
-  result = post_to_twitter(trigram)
+  d = Dinocr('/tmp/comic.png')
+  if d.erased_pixels > 2000:
+    error_out('large amount of erases in a new comic',True)
+  trigram = d.choose_random_trigram()
+  # result = post_to_twitter(trigram)
   infofile = open('trigramosaurus.txt','w')
   infofile.write(str(comicnum))
   infofile.close()

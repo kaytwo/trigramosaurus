@@ -84,6 +84,7 @@ class Dinocr:
     while len(pending_wipe) > 0:
       x,y = pending_wipe.pop()
       self.pix[x,y] = 1
+      self.erased_pixels += 1
       if self.pix[x-1,y] != 1:
         pending_wipe.append((x-1,y))
       if self.pix[x+1,y] != 1:
@@ -322,6 +323,7 @@ class Dinocr:
   def __init__(self,filename):
     self.panel_texts = []
     self.imgname = filename
+    self.erased_pixels = 0
     cutpoints = []
     cutpoints.append((0,0,242,242))
     cutpoints.append((242,0,374,242))
