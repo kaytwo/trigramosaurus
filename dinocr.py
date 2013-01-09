@@ -396,5 +396,6 @@ if __name__ == '__main__':
   else:
     filename = "test_bold_italic.png"
   d = Dinocr(filename)
+  d.print_comic()
   # d.store_comic_to_db()
-  print d.choose_random_trigram()
+  # print d.choose_random_trigram()
