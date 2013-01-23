@@ -24,6 +24,9 @@ todos
 =====
 
 accented characters (at least those used in french)
+
 callout detection
+
 "something went wrong" detection ✓
+
 hyphenation detection
