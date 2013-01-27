@@ -17,6 +17,18 @@ def printmap(s):
       offset += 1
     print ""
 
+def printmap_bold(s):
+  offset = 0
+  for y in range(13):
+    for x in range(9):
+      if s[offset] >= 1:
+        sys.stdout.write(' ')
+      else:
+        sys.stdout.write('X')
+      offset += 1
+    print ""
+
+
 def print_prospective_bold(img,x,y):
   for y1 in range(13):
     for x1 in range(9):
@@ -34,11 +46,91 @@ def print_prospective(pix):
       else:
         sys.stdout.write('X')
     print ""
- 
+
+class UnsureException(Exception):
+  '''raise this when parsing fails enough
+  that the comic should be looked at by a human
+  instead.'''
+
+  def __init__(self,value):
+    self.value=value
+
+  def __str__(self):
+    return repr(self.value)
+
+
+class Stanza:
+  def __init__(self,words,color,is_bold=False,is_italic=False):
+    self.speaker = 'unknown'
+    self.words = words
+    self.color = color
+    self.is_bold = is_bold
+    self.is_italic = is_italic
+
+  def __str__(self):
+    return "%-15s%s" % (self.speaker + ':',' '.join(''.join(self.words).split()))
+
+class DinosaurComicPanel:
+  def __init__(self):
+    self.stanzas = []
+    self.panel_number = -1
+
+  def __str__(self):
+    return 'Panel %d:\n' % self.panel_number + \
+      '\n'.join([str(x) for x in self.stanzas])
+
+
+class DinosaurComic:
+  def __init__(self,name='unknown'):
+    self.curpanel = 1
+    self.panels = []
+    self.name = name
+
+  def addpanel(self,panel):
+    panel.panel_number = self.curpanel
+    self.panels.append(panel)
+    self.curpanel += 1
+
+  def __str__(self):
+    return 'comic %s\n' % self.name + \
+      '\n'.join([str(x) for x in self.panels])
+
+'''
+how to use the object representations:
+  
+  thisComic = DinosaurComic()
+
+  for blahblah:
+    thisPanel = DinosaurComicPanel()
+    stanzas = []
+    stanzas.append(Stanza(foundwords, colorctr))
+    stanzas.append(Stanza(foundwords, colorctr))
+    thisPanel.stanzas = stanzas
+    thisComic.append(thisPanel)
+'''
+
 class Dinocr:
   charmap_file = open('charmap.pkl','rb')
   charmap_bold = open('charmap_bold.pkl','rb')
   charmap_italic = open('charmap_italic.pkl','rb')
+  
+  colors = {
+     (0, 38, 255, 255): 'Dromiceiomimus',
+     (0, 148, 255, 255): 'House',
+     (0, 255, 33, 255): 'Utahraptor',
+     (0, 255, 255, 255): 'T-Rex',
+     (128, 0, 0, 255): 'Devil',
+     (128, 128, 128, 255): 'Ryan',
+     (255, 0, 255, 255): 'border',
+     (255, 106, 0, 255): 'Girl',
+     (255, 216, 0, 255): 'Car'
+     }
+ 
+  textcolors = {
+      (0x80,0,0,0xFF):'devil',
+      (107,3,0,255):'also devil?',
+      (0,0,0,0xFF):'normal'
+      }
 
   italic_charmap = pickle.load(charmap_italic)
   italic_revmap = pickle.load(charmap_italic)
@@ -51,68 +143,67 @@ class Dinocr:
 
   italic_offset = [3,3,3,2,2,2,1,1,1,0,0,-1,-1]
 
-  def read_panel(self,image):
-    r = png.Reader(bytes = image)
-    self.sizex,self.sizey,self.pixels,dc = r.asDirect()
-    self.pix = defaultdict(lambda:int(1))
-    # self.pix = {}
-    x = 0
-    y = 0
-    for row in self.pixels:
-      x = 0
-      for column in row:
-        self.pix[x,y] = column
-        x += 1
-      y += 1
-   
-
-  def find_first_pixel(self,color=0):
-    '''find the first black pixel scanning LR and TB'''
+  def find_first_pixel(self,bbox):
+    '''find the first black/devil pixel scanning LR and TB'''
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    startx = bbox[0]
+    starty = bbox[1]
     this_line = []
-    for y in range(self.sizey):
-      for x in range(self.sizex):
-        if self.pix[x,y] == color:
+    for y in range(height):
+      for x in range(width):
+        # print "(%d,%d) color: %s" % (x+startx,y+starty,str(self.pix[x+startx,y+starty]))
+        if self.pix[x+startx,y+starty] in Dinocr.textcolors:
+          # print "testing for text at (%d,%d)" % (x+startx,y+starty)
           # print("found top leftmost black pixel at %d,%d" % (x,y))
-          return x,y
+          return startx+x,starty+y
     return -1,-1
 
   def erase_contiguous(self,x,y):
     '''
-    recursively blank every non-white pixel that is adjacent to this pixel
+    recursively blank every same color pixel that is adjacent to this pixel
     '''
+    this_pixel_color = self.pix[x,y]
+    miny = (x,y)
+    maxy = (x,y)
     pending_wipe = [(x,y)]
     while len(pending_wipe) > 0:
       x,y = pending_wipe.pop()
-      self.pix[x,y] = 1
+      if y < miny[1]:
+        miny = (x,y)
+      elif y > maxy[1]:
+        maxy = (x,y)
+      self.pix[x,y] = (255,255,255,255)
       self.erased_pixels += 1
-      if self.pix[x-1,y] != 1:
+      if self.pix[x-1,y] == this_pixel_color:
         pending_wipe.append((x-1,y))
-      if self.pix[x+1,y] != 1:
+      if self.pix[x+1,y] == this_pixel_color:
         pending_wipe.append((x+1,y))
-      if self.pix[x,y-1] != 1:
+      if self.pix[x,y-1] == this_pixel_color:
         pending_wipe.append((x,y-1))
-      if self.pix[x,y+1] != 1:
+      if self.pix[x,y+1] == this_pixel_color:
         pending_wipe.append((x,y+1))
+    return (miny,maxy)
 
-  def erase_bold_character_area(self,x,y):
+  def erase_bold_character_area(self,x,y,color):
     '''blank the 9x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(9):
-        self.pix[x+x1,y+y1] = 1
+        self.pix[x+x1,y+y1] = color
 
-  def erase_italic_character_area(self,x,y):
+  def erase_italic_character_area(self,x,y,color):
     '''blank the 8x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(8):
-        self.pix[x+x1 + Dinocr.italic_offset[y1],y+y1] = 1
+        self.pix[x+x1 + Dinocr.italic_offset[y1],y+y1] = color
 
-  def erase_character_area(self,x,y):
+  def erase_character_area(self,x,y,color):
     '''blank the 8x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(8):
-        self.pix[x+x1,y+y1] = 1
+        self.pix[x+x1,y+y1] = color
 
-  def match_with_italic_character(self,x,y,origin=False):
+  def match_with_italic_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
     '''
     with origin = true, (x,y) denotes the origin of where we expect
     the character to be; 
@@ -125,14 +216,16 @@ class Dinocr:
       for y1 in range(13):
         for x1 in range(8):
           try:
-            new_char.append(self.pix[x + x1 + Dinocr.italic_offset[y1],
-                                   y + y1])
-          except KeyError:
+            if self.pix[x + x1 + Dinocr.italic_offset[y1],
+                y + y1] in self.textcolors.keys():
+              c = 0
+            else:
+              c = 1
+            new_char.append(c)
+          except IndexError:
             new_char.append(1)
-      # print "testing aligned italic character:"
-      # printmap(new_char)
       if tuple(new_char) in Dinocr.italic_revmap:
-        self.erase_italic_character_area(x,y)
+        self.erase_italic_character_area(x,y,erase_color)
         return Dinocr.italic_revmap[tuple(new_char)],x,y
       else:
         return ' ',-1,-1
@@ -150,9 +243,13 @@ class Dinocr:
       for y1 in range(13):
         for x1 in range(8):
           try:
-            new_char.append(self.pix[letter_start_x + x1 + Dinocr.italic_offset[y1],
-                              letter_start_y + y1])
-          except KeyError:
+            if self.pix[letter_start_x + x1 + Dinocr.italic_offset[y1],
+                letter_start_y + y1] in self.textcolors.keys():
+              c = 0
+            else:
+              c = 1
+            new_char.append(c)
+          except IndexError:
             new_char.append(1)
 
       # printmap(new_char)
@@ -164,7 +261,7 @@ class Dinocr:
     return '',-1,-1
 
 
-  def match_with_character(self,x,y,origin=False):
+  def match_with_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
     '''
     with origin = true, (x,y) denotes the origin of where we expect
     the character to be; 
@@ -176,10 +273,13 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(8):
-          new_char.append(self.pix[x + x1,
-                                   y + y1])
+          if self.pix[x+x1,y+y1] in self.textcolors.keys():
+            c = 0
+          else:
+            c = 1
+          new_char.append(c)
       if tuple(new_char) in Dinocr.revmap:
-        self.erase_character_area(x,y)
+        self.erase_character_area(x,y,erase_color)
         return Dinocr.revmap[tuple(new_char)],x,y
       else:
         return ' ',-1,-1
@@ -196,8 +296,11 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(8):
-          new_char.append(self.pix[letter_start_x + x1,
-                              letter_start_y + y1])
+          if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
+            c = 0
+          else:
+            c = 1
+          new_char.append(c)
       # printmap(new_char)
       if all([(new_char[a] > 0) == 
               (Dinocr.charmap[letter][0][a] > 0) 
@@ -206,7 +309,7 @@ class Dinocr:
         return letter, letter_start_x,letter_start_y
     return '',-1,-1
 
-  def match_with_bold_character(self,x,y,origin=False):
+  def match_with_bold_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
     '''
     with origin = true, (x,y) denotes the origin of where we expect
     the character to be; 
@@ -218,13 +321,14 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
-          thispixel = self.pix[x+x1,y+y1]
-          # print thispixel
-          new_char.append(self.pix[x + x1,
-                                   y + y1])
+          if self.pix[x+x1,y+y1] in self.textcolors.keys():
+            c = 0
+          else:
+            c = 1
+          new_char.append(c)
       if tuple(new_char) in Dinocr.bold_revmap:
         # print "found bold character",Dinocr.bold_revmap[tuple(new_char)],"at",str(x),str(y)
-        self.erase_bold_character_area(x,y)
+        self.erase_bold_character_area(x,y,erase_color)
         return Dinocr.bold_revmap[tuple(new_char)],x,y
       else:
         # print_prospective_bold(self.pix,x,y)
@@ -242,9 +346,13 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
-          new_char.append(self.pix[letter_start_x + x1,
-                              letter_start_y + y1])
-      # printmap(new_char)
+          if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
+            c = 0
+          else:
+            c = 1
+          new_char.append(c)
+          
+      # printmap_bold(new_char)
       if all([(new_char[a] > 0) == 
               (Dinocr.bold_charmap[letter][0][a] > 0) 
               for a in range(9*13)]):
@@ -253,15 +361,19 @@ class Dinocr:
     return '',-1,-1
 
 
-  def find_aligned(self,originx,originy):
+  def find_aligned(self,originx,originy,bbox,color):
     line = []
-    firstx,firsty = originx % 8,originy
-    while firsty < self.sizey - 13:
+    firstx = bbox[0] + ((originx - bbox[0]) % 8)
+    left_edge = firstx
+    last_x = bbox[2]
+    last_y = bbox[3]
+    firsty = originy
+    while firsty < last_y - 13:
       text_this_line = False
-      while firstx  < self.sizex - 8:
-        this_character = self.match_with_character(firstx,firsty,origin=True)[0]
+      while firstx  < last_x - 8:
+        this_character = self.match_with_character(firstx,firsty,origin=True,erase_color=color)[0]
         if this_character == ' ':
-          this_character = self.match_with_italic_character(firstx,firsty,origin=True)[0]
+          this_character = self.match_with_italic_character(firstx,firsty,origin=True,erase_color=color)[0]
         if this_character != '' and this_character != ' ':
           text_this_line = True
         line.append(this_character)
@@ -270,17 +382,22 @@ class Dinocr:
         return line
       line.append('\n')
       firsty += 13
-      firstx = originx % 8
+      firstx = left_edge
     return line
  
 
-  def find_aligned_bold(self,originx,originy):
+  def find_aligned_bold(self,originx,originy,bbox,color):
     line = []
-    firstx,firsty = originx % 9,originy
-    while firsty < self.sizey - 13:
+    firstx = bbox[0] + ((originx - bbox[0]) % 9)
+    left_edge = firstx
+    last_x = bbox[2]
+    last_y = bbox[3]
+    firsty = originy
+    while firsty < last_y - 13:
       text_this_line = False
-      while firstx  < self.sizex - 9:
-        this_character = self.match_with_bold_character(firstx,firsty,origin=True)[0]
+      while firstx  < last_x - 9:
+        this_character = self.match_with_bold_character(firstx,firsty,origin=True,erase_color=color)[0]
+        # print "found %s at (%d,%d)" % (this_character,firstx,firsty)
         if this_character != '' and this_character != ' ':
           text_this_line = True
         line.append(this_character)
@@ -289,42 +406,53 @@ class Dinocr:
         return line
       line.append('\n')
       firsty += 13
-      firstx = originx % 9
+      firstx = left_edge
     return line
  
 
-  def ocr_current_panel(self):
+  def ocr_current_panel(self,bbox):
+    d = DinosaurComicPanel()
     lines = []
+    # increment the B in this color for each stanza to uniqueify them
+    color = (255,255,0,255)
     while True:
-      startx,starty = self.find_first_pixel()
+      startx,starty = self.find_first_pixel(bbox)
       if startx < 0:
         break
+      is_italic = False
+      is_bold = False
       letter, originx,originy = self.match_with_character(startx,starty)
       if letter == '':
         letter, originx,originy = self.match_with_italic_character(startx,starty)
+        if letter != '':
+          is_italic = True
       if letter != '':
-        lines.append(self.find_aligned(originx,originy))
+        # print "found normal/italic letter %s" % letter
+        d.stanzas.append(Stanza(self.find_aligned(originx,originy,bbox,color),color,is_bold=is_bold,is_italic=is_italic))
+        color = (255,255,color[2] + 1,255)
+        continue
       letter, originx,originy = self.match_with_bold_character(startx,starty)
       if letter != '':
-        lines.append(self.find_aligned_bold(originx,originy))
+        # print "found bold letter %s" % letter
+        d.stanzas.append(Stanza(self.find_aligned_bold(originx,originy,bbox,color),color,is_bold=True,is_italic=False))
+        color = (255,255,color[2] + 1,255)
+        continue
       if letter == '':
         # print "had to erase at",startx,starty
-        self.erase_contiguous(startx,starty)
+        self.callouts.append(self.erase_contiguous(startx,starty))
         continue
-    retlines = []
-    for line_num in range(len(lines)):
-        thisline = ''.join(lines[line_num])
-        words = ' '.join(thisline.split())
-        retlines.append(words)
-    return retlines
+    return d
 
 
 
   def __init__(self,filename):
     self.panel_texts = []
+    self.callouts = []
     self.imgname = filename
     self.erased_pixels = 0
+    self.comic_text = DinosaurComic(filename)
     cutpoints = []
+    # coords are (((((((((x0,y0,x1,y1)
     cutpoints.append((0,0,242,242))
     cutpoints.append((242,0,374,242))
     cutpoints.append((374,0,735,242))
@@ -333,20 +461,20 @@ class Dinocr:
     cutpoints.append((492,242,735,500))
 
     out = Image.new('1',(735,500),255)
-    im1 = Image.open("comic_mask.bmp")
-    im2 = Image.open(filename)
-    im1 = im1.convert('1')
-    # convert to b&w (lose devil color):
-    im2 = im2.convert("L")
-    im2 = Image.eval(im2, lambda px: 255 if px == 255 else 0)
     
-    im2 = im2.convert('1')
-    out.paste(im2,None,im1)
-    
-    self.panels = []
+    mask_png  = Image.open("dinocolors.png").convert('RGBA')
+    comic_png = Image.open(filename).convert('RGBA')
+
+    comic_png.paste(mask_png,mask_png)
+    self.comic_png = comic_png
+    self.pix = self.comic_png.load()
     # panels.append(out.crop(cutpoints[4]))
-    for panel in cutpoints:
-      self.panels.append(out.crop(panel))
+    for bbox in cutpoints:
+      r = self.ocr_current_panel(bbox)
+      self.comic_text.addpanel(r)
+    
+    print(self.comic_text)
+    sys.exit()
 
     '''ocr all 6 panels and add the line-by-line info to panel_texts'''
     for panel_num in range(len(self.panels)):
