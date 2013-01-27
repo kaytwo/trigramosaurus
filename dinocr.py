@@ -475,22 +475,21 @@ class Dinocr:
 
   def circle(self,x0,y0,radius):
     '''
-    return the color of each pixel that is radius pixels away
+    iterate over each pixel that is radius pixels away
     from x0,y0
     this value is used to find the nearest text/speaker to each
     end of a callout
     '''
-    assert self.pix
     f = 1 - radius
     ddf_x = 1
     ddf_y = -2 * radius
     x = 0
     y = radius
 
-    yield self.pix[x0, y0 + radius]
-    yield self.pix[x0, y0 - radius]
-    yield self.pix[x0 + radius, y0]
-    yield self.pix[x0 - radius, y0]
+    yield x0, y0 + radius
+    yield x0, y0 - radius
+    yield x0 + radius, y0
+    yield x0 - radius, y0
 
     while x < y:
       if f >= 0: 
@@ -500,14 +499,16 @@ class Dinocr:
       x += 1
       ddf_x += 2
       f += ddf_x    
-      yield self.pix[x0 + x, y0 + y]
-      yield self.pix[x0 - x, y0 + y]
-      yield self.pix[x0 + x, y0 - y]
-      yield self.pix[x0 - x, y0 - y]
-      yield self.pix[x0 + y, y0 + x]
-      yield self.pix[x0 - y, y0 + x]
-      yield self.pix[x0 + y, y0 - x]
-      yield self.pix[x0 - y, y0 - x]
+      yield x0 + x, y0 + y
+      yield x0 - x, y0 + y
+      yield x0 + x, y0 - y
+      yield x0 - x, y0 - y
+      yield x0 + y, y0 + x
+      yield x0 - y, y0 + x
+      yield x0 + y, y0 - x
+      yield x0 - y, y0 - x
+
+
 
   def __init__(self,filename):
     self.panel_texts = []
@@ -538,28 +539,39 @@ class Dinocr:
       r = self.ocr_current_panel(bbox)
       self.comic_text.addpanel(r)
 
-    self.comic_png.save('p2messup.png','PNG')
-
     for callout in self.callouts:
       talker,talkee = self.find_talkers(callout)
       if talker == 'border':
-        talker = Dinocr.textcolors[talkee.text_color]
-      print callout,talker,talkee.text()
+        talker_color = Dinocr.textcolors[talkee.text_color]
+        if talker_color == 'red':
+          talker = 'The Devil'
+        else:
+          talker = 'God'
+      talkee.speaker = talker
+
 
   def find_talkers(self,callout):
     talker = None
     talkee = None
     for edge in callout:
+      edge_set = False
       for radius in range(15):
         x,y = edge
-        for pixel_color in self.circle(x,y,radius):
+        for p in self.circle(x,y,radius):
+          pixel_color = self.pix[p]
+          self.pix[p] = (0x88,0x88,0x88,0xff)
           if pixel_color in Dinocr.colors and talker == None:
             talker = Dinocr.colors[pixel_color]
+            edge_set = True
+            break
           if pixel_color in self.stanza_colors and talkee == None:
-            # print "stanza color:",pixel_color
             talkee = self.stanza_colors[pixel_color]
-          if talker != None and talkee != None:
-            return talker,talkee
+            edge_set = True
+            break
+        if talker != None and talkee != None:
+          return talker,talkee
+        if edge_set:
+          break
     return "unknown :(","unknown :("
 
 
@@ -596,6 +608,6 @@ if __name__ == '__main__':
   else:
     filename = "test_bold_italic.png"
   d = Dinocr(filename)
-  # d.print_comic()
+  d.print_comic()
   # d.store_comic_to_db()
   # print d.choose_random_trigram()
