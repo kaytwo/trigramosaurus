@@ -60,8 +60,9 @@ class UnsureException(Exception):
 
 
 class Stanza:
-  def __init__(self,words,color,is_bold=False,is_italic=False):
+  def __init__(self,words,text_color,color,is_bold=False,is_italic=False):
     self.speaker = 'unknown'
+    self.text_color = text_color
     self.words = words
     self.color = color
     self.is_bold = is_bold
@@ -69,6 +70,9 @@ class Stanza:
 
   def __str__(self):
     return "%-15s%s" % (self.speaker + ':',' '.join(''.join(self.words).split()))
+
+  def text(self):
+    return ' '.join(''.join(self.words).split())
 
 class DinosaurComicPanel:
   def __init__(self):
@@ -78,6 +82,9 @@ class DinosaurComicPanel:
   def __str__(self):
     return 'Panel %d:\n' % self.panel_number + \
       '\n'.join([str(x) for x in self.stanzas])
+
+  def text(self):
+    return ' '.join([x.text() for x in self.stanzas])
 
 
 class DinosaurComic:
@@ -90,6 +97,9 @@ class DinosaurComic:
     panel.panel_number = self.curpanel
     self.panels.append(panel)
     self.curpanel += 1
+
+  def text(self):
+    return ' '.join([x.text() for x in self.panels])
 
   def __str__(self):
     return 'comic %s\n' % self.name + \
@@ -119,7 +129,7 @@ class Dinocr:
      (0, 148, 255, 255): 'House',
      (0, 255, 33, 255): 'Utahraptor',
      (0, 255, 255, 255): 'T-Rex',
-     (128, 0, 0, 255): 'Devil',
+     # (128, 0, 0, 255): 'Devil',
      (128, 128, 128, 255): 'Ryan',
      (255, 0, 255, 255): 'border',
      (255, 106, 0, 255): 'Girl',
@@ -127,8 +137,8 @@ class Dinocr:
      }
  
   textcolors = {
-      (0x80,0,0,0xFF):'devil',
-      (107,3,0,255):'also devil?',
+      (0x80,0,0,0xFF):'red',
+      (107,3,0,255):'red',
       (0,0,0,0xFF):'normal'
       }
 
@@ -211,6 +221,7 @@ class Dinocr:
     colored character found, and we must find the prospective origin
     to make the comparison
     '''
+    old_color = None
     if origin == True:
       new_char = []
       for y1 in range(13):
@@ -218,6 +229,7 @@ class Dinocr:
           try:
             if self.pix[x + x1 + Dinocr.italic_offset[y1],
                 y + y1] in self.textcolors.keys():
+              old_color = self.pix[x + x1 + Dinocr.italic_offset[y1],y + y1]
               c = 0
             else:
               c = 1
@@ -226,9 +238,9 @@ class Dinocr:
             new_char.append(1)
       if tuple(new_char) in Dinocr.italic_revmap:
         self.erase_italic_character_area(x,y,erase_color)
-        return Dinocr.italic_revmap[tuple(new_char)],x,y
+        return (Dinocr.italic_revmap[tuple(new_char)],old_color),x,y
       else:
-        return ' ',-1,-1
+        return (' ',None),-1,-1
     
     # origin == False
     for letter in Dinocr.italic_charmap.keys():
@@ -244,7 +256,9 @@ class Dinocr:
         for x1 in range(8):
           try:
             if self.pix[letter_start_x + x1 + Dinocr.italic_offset[y1],
-                letter_start_y + y1] in self.textcolors.keys():
+                        letter_start_y + y1] in self.textcolors.keys():
+              old_color = self.pix[letter_start_x + x1 + Dinocr.italic_offset[y1], \
+                                   letter_start_y + y1] 
               c = 0
             else:
               c = 1
@@ -257,8 +271,8 @@ class Dinocr:
               (Dinocr.italic_charmap[letter][0][a] > 0) 
               for a in range(8*13)]):
         # print "found character",letter
-        return letter, letter_start_x,letter_start_y
-    return '',-1,-1
+        return (letter,old_color), letter_start_x,letter_start_y
+    return ('',None),-1,-1
 
 
   def match_with_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
@@ -269,20 +283,22 @@ class Dinocr:
     colored character found, and we must find the prospective origin
     to make the comparison
     '''
+    old_color = None
     if origin == True:
       new_char = []
       for y1 in range(13):
         for x1 in range(8):
           if self.pix[x+x1,y+y1] in self.textcolors.keys():
+            old_color = self.pix[x+x1,y+y1]
             c = 0
           else:
             c = 1
           new_char.append(c)
       if tuple(new_char) in Dinocr.revmap:
         self.erase_character_area(x,y,erase_color)
-        return Dinocr.revmap[tuple(new_char)],x,y
+        return (Dinocr.revmap[tuple(new_char)],old_color),x,y
       else:
-        return ' ',-1,-1
+        return (' ',old_color),-1,-1
     
     # origin == False
     for letter in Dinocr.charmap.keys():
@@ -306,8 +322,8 @@ class Dinocr:
               (Dinocr.charmap[letter][0][a] > 0) 
               for a in range(8*13)]):
         # print "found character",letter
-        return letter, letter_start_x,letter_start_y
-    return '',-1,-1
+        return (letter,old_color), letter_start_x,letter_start_y
+    return ('',None),-1,-1
 
   def match_with_bold_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
     '''
@@ -317,22 +333,24 @@ class Dinocr:
     colored character found, and we must find the prospective origin
     to make the comparison
     '''
+    old_color = None
     if origin == True:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
           if self.pix[x+x1,y+y1] in self.textcolors.keys():
             c = 0
+            old_color = self.pix[x+x1,y+y1]
           else:
             c = 1
           new_char.append(c)
       if tuple(new_char) in Dinocr.bold_revmap:
         # print "found bold character",Dinocr.bold_revmap[tuple(new_char)],"at",str(x),str(y)
         self.erase_bold_character_area(x,y,erase_color)
-        return Dinocr.bold_revmap[tuple(new_char)],x,y
+        return (Dinocr.bold_revmap[tuple(new_char)],old_color),x,y
       else:
         # print_prospective_bold(self.pix,x,y)
-        return ' ',-1,-1
+        return (' ',None),-1,-1
     
     # origin == False
     for letter in Dinocr.bold_charmap.keys():
@@ -347,6 +365,7 @@ class Dinocr:
       for y1 in range(13):
         for x1 in range(9):
           if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
+            old_color = self.pix[letter_start_x+x1,letter_start_y+y1] 
             c = 0
           else:
             c = 1
@@ -357,12 +376,13 @@ class Dinocr:
               (Dinocr.bold_charmap[letter][0][a] > 0) 
               for a in range(9*13)]):
         # print "found character",letter
-        return letter, letter_start_x,letter_start_y
-    return '',-1,-1
+        return (letter,old_color), letter_start_x,letter_start_y
+    return ('',None),-1,-1
 
 
   def find_aligned(self,originx,originy,bbox,color):
     line = []
+    text_color = 'unknown'
     firstx = bbox[0] + ((originx - bbox[0]) % 8)
     left_edge = firstx
     last_x = bbox[2]
@@ -371,23 +391,25 @@ class Dinocr:
     while firsty < last_y - 13:
       text_this_line = False
       while firstx  < last_x - 8:
-        this_character = self.match_with_character(firstx,firsty,origin=True,erase_color=color)[0]
+        this_character,temp_color = self.match_with_character(firstx,firsty,origin=True,erase_color=color)[0]
         if this_character == ' ':
-          this_character = self.match_with_italic_character(firstx,firsty,origin=True,erase_color=color)[0]
+          this_character,temp_color = self.match_with_italic_character(firstx,firsty,origin=True,erase_color=color)[0]
         if this_character != '' and this_character != ' ':
+          text_color = temp_color
           text_this_line = True
         line.append(this_character)
         firstx += 8
       if text_this_line == False:
-        return line
+        return line,text_color
       line.append('\n')
       firsty += 13
       firstx = left_edge
-    return line
+    return line,text_color
  
 
   def find_aligned_bold(self,originx,originy,bbox,color):
     line = []
+    text_color = 'unknown'
     firstx = bbox[0] + ((originx - bbox[0]) % 9)
     left_edge = firstx
     last_x = bbox[2]
@@ -396,46 +418,54 @@ class Dinocr:
     while firsty < last_y - 13:
       text_this_line = False
       while firstx  < last_x - 9:
-        this_character = self.match_with_bold_character(firstx,firsty,origin=True,erase_color=color)[0]
+        this_character,temp_color = self.match_with_bold_character(firstx,firsty,origin=True,erase_color=color)[0]
         # print "found %s at (%d,%d)" % (this_character,firstx,firsty)
         if this_character != '' and this_character != ' ':
           text_this_line = True
+          text_color = temp_color
         line.append(this_character)
         firstx += 9
       if text_this_line == False:
-        return line
+        return line,text_color
       line.append('\n')
       firsty += 13
       firstx = left_edge
-    return line
+    return line,text_color
  
 
   def ocr_current_panel(self,bbox):
     d = DinosaurComicPanel()
     lines = []
     # increment the B in this color for each stanza to uniqueify them
-    color = (255,255,0,255)
     while True:
       startx,starty = self.find_first_pixel(bbox)
       if startx < 0:
         break
       is_italic = False
       is_bold = False
-      letter, originx,originy = self.match_with_character(startx,starty)
+      (letter,text_color), originx,originy = self.match_with_character(startx,starty)
       if letter == '':
-        letter, originx,originy = self.match_with_italic_character(startx,starty)
+        (letter,text_color), originx,originy = self.match_with_italic_character(startx,starty)
         if letter != '':
           is_italic = True
       if letter != '':
         # print "found normal/italic letter %s" % letter
-        d.stanzas.append(Stanza(self.find_aligned(originx,originy,bbox,color),color,is_bold=is_bold,is_italic=is_italic))
-        color = (255,255,color[2] + 1,255)
+        this_color = tuple(self.stanza_color)
+        text,text_color = self.find_aligned(originx,originy,bbox,this_color)
+        s = Stanza(text,text_color,this_color,is_bold=is_bold,is_italic=is_italic)
+        self.stanza_colors[this_color] = s
+        d.stanzas.append(s)
+        self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
         continue
-      letter, originx,originy = self.match_with_bold_character(startx,starty)
+      (letter,text_color), originx,originy = self.match_with_bold_character(startx,starty)
       if letter != '':
         # print "found bold letter %s" % letter
-        d.stanzas.append(Stanza(self.find_aligned_bold(originx,originy,bbox,color),color,is_bold=True,is_italic=False))
-        color = (255,255,color[2] + 1,255)
+        this_color = tuple(self.stanza_color)
+        text,text_color = self.find_aligned_bold(originx,originy,bbox,this_color)
+        s = Stanza(text,text_color,this_color,is_bold=True,is_italic=False)
+        self.stanza_colors[this_color] = s
+        d.stanzas.append(s)
+        self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
         continue
       if letter == '':
         # print "had to erase at",startx,starty
@@ -443,7 +473,41 @@ class Dinocr:
         continue
     return d
 
+  def circle(self,x0,y0,radius):
+    '''
+    return the color of each pixel that is radius pixels away
+    from x0,y0
+    this value is used to find the nearest text/speaker to each
+    end of a callout
+    '''
+    assert self.pix
+    f = 1 - radius
+    ddf_x = 1
+    ddf_y = -2 * radius
+    x = 0
+    y = radius
 
+    yield self.pix[x0, y0 + radius]
+    yield self.pix[x0, y0 - radius]
+    yield self.pix[x0 + radius, y0]
+    yield self.pix[x0 - radius, y0]
+
+    while x < y:
+      if f >= 0: 
+        y -= 1
+        ddf_y += 2
+        f += ddf_y
+      x += 1
+      ddf_x += 2
+      f += ddf_x    
+      yield self.pix[x0 + x, y0 + y]
+      yield self.pix[x0 - x, y0 + y]
+      yield self.pix[x0 + x, y0 - y]
+      yield self.pix[x0 - x, y0 - y]
+      yield self.pix[x0 + y, y0 + x]
+      yield self.pix[x0 - y, y0 + x]
+      yield self.pix[x0 + y, y0 - x]
+      yield self.pix[x0 - y, y0 - x]
 
   def __init__(self,filename):
     self.panel_texts = []
@@ -451,8 +515,9 @@ class Dinocr:
     self.imgname = filename
     self.erased_pixels = 0
     self.comic_text = DinosaurComic(filename)
+    self.stanza_colors = {}
+    
     cutpoints = []
-    # coords are (((((((((x0,y0,x1,y1)
     cutpoints.append((0,0,242,242))
     cutpoints.append((242,0,374,242))
     cutpoints.append((374,0,735,242))
@@ -468,28 +533,39 @@ class Dinocr:
     comic_png.paste(mask_png,mask_png)
     self.comic_png = comic_png
     self.pix = self.comic_png.load()
-    # panels.append(out.crop(cutpoints[4]))
+    self.stanza_color = (255,255,0,255)
     for bbox in cutpoints:
       r = self.ocr_current_panel(bbox)
       self.comic_text.addpanel(r)
-    
-    print(self.comic_text)
-    sys.exit()
 
-    '''ocr all 6 panels and add the line-by-line info to panel_texts'''
-    for panel_num in range(len(self.panels)):
-      this_panel = self.panels[panel_num]
-      f = StringIO.StringIO()
-      this_panel.save(f,'png')
-      self.read_panel(f.getvalue())
-      lines = self.ocr_current_panel()
-      self.panel_texts.append(lines)
+    self.comic_png.save('p2messup.png','PNG')
+
+    for callout in self.callouts:
+      talker,talkee = self.find_talkers(callout)
+      if talker == 'border':
+        talker = Dinocr.textcolors[talkee.text_color]
+      print callout,talker,talkee.text()
+
+  def find_talkers(self,callout):
+    talker = None
+    talkee = None
+    for edge in callout:
+      for radius in range(15):
+        x,y = edge
+        for pixel_color in self.circle(x,y,radius):
+          if pixel_color in Dinocr.colors and talker == None:
+            talker = Dinocr.colors[pixel_color]
+          if pixel_color in self.stanza_colors and talkee == None:
+            # print "stanza color:",pixel_color
+            talkee = self.stanza_colors[pixel_color]
+          if talker != None and talkee != None:
+            return talker,talkee
+    return "unknown :(","unknown :("
+
+
 
   def print_comic(self):
-    for pnum in range(len(self.panel_texts)):
-      print "panel %d" % (pnum+1)
-      for line in range(len(self.panel_texts[pnum])):
-        print self.panel_texts[pnum][line]
+    print self.comic_text
 
   def store_comic_to_db(self,dbfile='comic.db'):
     '''writes comic to comic.db'''
@@ -509,11 +585,7 @@ class Dinocr:
   def choose_random_trigram(self):
     import random
     ''' return a trigram, trigramosaurus style'''
-    entire_comic = []
-    for panel in self.panel_texts:
-      for line in panel:
-        entire_comic.append(line)
-    comic_words = ' '.join(entire_comic).split()
+    comic_words = self.comic_text.text()
     trigram_start = random.randint(0,len(comic_words)-3)
     trigram = ' '.join(comic_words[trigram_start:trigram_start+3])
     return trigram
@@ -524,6 +596,6 @@ if __name__ == '__main__':
   else:
     filename = "test_bold_italic.png"
   d = Dinocr(filename)
-  d.print_comic()
+  # d.print_comic()
   # d.store_comic_to_db()
   # print d.choose_random_trigram()
