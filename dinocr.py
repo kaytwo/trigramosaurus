@@ -1,4 +1,5 @@
-import png
+# vim: set fileencoding=utf-8
+
 import sys
 import pickle
 from collections import defaultdict
@@ -67,8 +68,11 @@ class Stanza:
     self.color = color
     self.is_bold = is_bold
     self.is_italic = is_italic
-
+  
   def __str__(self):
+      return unicode(self).encode('utf-8')
+  
+  def __unicode__(self):
     return "%-15s%s" % (self.speaker + ':',' '.join(''.join(self.words).split()))
 
   def text(self):
@@ -80,8 +84,11 @@ class DinosaurComicPanel:
     self.panel_number = -1
 
   def __str__(self):
+      return unicode(self).encode('utf-8')
+ 
+  def __unicode__(self):
     return 'Panel %d:\n' % self.panel_number + \
-      '\n'.join([str(x) for x in self.stanzas])
+      '\n'.join([unicode(x) for x in self.stanzas])
 
   def text(self):
     return ' '.join([x.text() for x in self.stanzas])
@@ -100,10 +107,18 @@ class DinosaurComic:
 
   def text(self):
     return ' '.join([x.text() for x in self.panels])
-
+  
   def __str__(self):
+      return unicode(self).encode('utf-8')
+ 
+  def __unicode__(self):
     return 'comic %s\n' % self.name + \
-      '\n'.join([str(x) for x in self.panels])
+      '\n'.join([unicode(x) for x in self.panels])
+
+  def stanzas(self):
+    for panel in self.panels:
+      for stanza in panel.stanzas:
+        yield stanza
 
 '''
 how to use the object representations:
@@ -294,6 +309,9 @@ class Dinocr:
           else:
             c = 1
           new_char.append(c)
+      # printmap(new_char)
+      # print tuple(new_char)
+      # print Dinocr.charmap[u'\xe8']
       if tuple(new_char) in Dinocr.revmap:
         self.erase_character_area(x,y,erase_color)
         return (Dinocr.revmap[tuple(new_char)],old_color),x,y
@@ -312,11 +330,14 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(8):
-          if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
-            c = 0
-          else:
-            c = 1
-          new_char.append(c)
+          try:
+            if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
+              c = 0
+            else:
+              c = 1
+            new_char.append(c)
+          except IndexError:
+            return ('',None),-1,-1
       # printmap(new_char)
       if all([(new_char[a] > 0) == 
               (Dinocr.charmap[letter][0][a] > 0) 
@@ -364,13 +385,15 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
-          if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
-            old_color = self.pix[letter_start_x+x1,letter_start_y+y1] 
-            c = 0
-          else:
-            c = 1
-          new_char.append(c)
-          
+          try:
+            if self.pix[letter_start_x+x1,letter_start_y+y1] in self.textcolors.keys():
+              old_color = self.pix[letter_start_x+x1,letter_start_y+y1] 
+              c = 0
+            else:
+              c = 1
+            new_char.append(c)
+          except IndexError:
+            return ('',None),-1,-1
       # printmap_bold(new_char)
       if all([(new_char[a] > 0) == 
               (Dinocr.bold_charmap[letter][0][a] > 0) 
@@ -473,7 +496,8 @@ class Dinocr:
         continue
     return d
 
-  def circle(self,x0,y0,radius):
+  @staticmethod
+  def circle(x0,y0,radius):
     '''
     iterate over each pixel that is radius pixels away
     from x0,y0
@@ -539,40 +563,80 @@ class Dinocr:
       r = self.ocr_current_panel(bbox)
       self.comic_text.addpanel(r)
 
+    # for stanza in self.comic_text.stanzas():
+    #   print ''.join(stanza.words),stanza.color
+    continuations = []
     for callout in self.callouts:
       talker,talkee = self.find_talkers(callout)
+      if talker in self.stanza_colors and talkee in self.stanza_colors:
+        continuations.append((talker,talkee))
+        continue
+      if talkee == 'unknown :(':
+        continue
       if talker == 'border':
-        talker_color = Dinocr.textcolors[talkee.text_color]
-        if talker_color == 'red':
-          talker = 'The Devil'
+        if talkee.is_bold:
+          talker_color = Dinocr.textcolors[talkee.text_color]
+          if talker_color == 'red':
+            talker = 'The Devil'
+          else:
+            talker = 'God'
         else:
-          talker = 'God'
+          talker = 'out of frame'
       talkee.speaker = talker
+    print continuations
+    for c in continuations:
+      if self.stanza_colors[c[0]].speaker == 'unknown':
+        print "setting speaker to " + `self.stanza_colors[c[1]].speaker`
+        self.stanza_colors[c[0]].speaker = self.stanza_colors[c[1]].speaker
+      elif self.stanza_colors[c[1]].speaker == 'unknown':
+        print "setting speaker to " + `self.stanza_colors[c[0]].speaker`
+        self.stanza_colors[c[1]].speaker = self.stanza_colors[c[0]].speaker
+      else:
+        print "continuation fixing borked"
+
+      
+
+    for stanza in self.comic_text.stanzas():
+      if stanza.speaker == 'unknown' and stanza.is_bold and stanza.text_color == (0,0,0,0xff):
+        stanza.speaker = 'Narrator'
+    # print self.comic_text
+    self.comic_png.save('busted_2217.png','PNG')
+
 
 
   def find_talkers(self,callout):
-    talker = None
-    talkee = None
+    closest_colors = []
+    talkpair = []
+    # closest_colors.append(self.find_closest_color(callout[0],callout[1]))
+    # closest_colors.append(self.find_closest_color(callout[1],callout[0]))
     for edge in callout:
-      edge_set = False
-      for radius in range(15):
-        x,y = edge
-        for p in self.circle(x,y,radius):
-          pixel_color = self.pix[p]
-          self.pix[p] = (0x88,0x88,0x88,0xff)
-          if pixel_color in Dinocr.colors and talker == None:
-            talker = Dinocr.colors[pixel_color]
-            edge_set = True
-            break
-          if pixel_color in self.stanza_colors and talkee == None:
-            talkee = self.stanza_colors[pixel_color]
-            edge_set = True
-            break
-        if talker != None and talkee != None:
-          return talker,talkee
-        if edge_set:
-          break
-    return "unknown :(","unknown :("
+      closest_colors.append(self.find_closest_color(edge))
+    for c in closest_colors:
+      if c in Dinocr.colors:
+        talkpair.append(c)
+      elif c in self.stanza_colors:
+        talkpair.append(c)
+    if all(t in self.stanza_colors for t in talkpair):
+      # a continuation to be fixed
+      print "fix this continuation:",talkpair
+      return talkpair
+    if all(t in Dinocr.colors for t in talkpair):
+      # weird error, just leave shit unknown and bomb out
+      return "callout detection error","callout detection error"
+    if talkpair[0] in Dinocr.colors:
+      return Dinocr.colors[talkpair[0]],self.stanza_colors[talkpair[1]]
+    else:
+      return Dinocr.colors[talkpair[1]],self.stanza_colors[talkpair[0]]
+
+  
+  def find_closest_color(self,vertex):
+    for radius in range(25):
+      x,y = vertex
+      for p in Dinocr.circle(x,y,radius):
+        pixel_color = self.pix[p]
+        self.pix[p] = (0x88,0x88,0x88,0xff)
+        if pixel_color in Dinocr.colors or pixel_color in self.stanza_colors:
+          return pixel_color
 
 
 

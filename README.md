@@ -20,13 +20,21 @@ database schema
 
 This schema will be changed once I know who is talking using callout detection.
 
+WIPs
+====
+
+accented characters (at least those used in french)
+  grave e and acute e done because they're in my test suite
+
+callout detection
+  works
+
+"something went wrong" detection ✓
+  need a proper/standard way to report this
+
 todos
 =====
 
-accented characters (at least those used in french)
-
-callout detection
-
-"something went wrong" detection ✓
+recursive callouts
 
 hyphenation detection
