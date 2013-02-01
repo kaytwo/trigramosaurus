@@ -29,6 +29,8 @@ post to twitter
 
 def error_out(msg,alert=False):
   if alert:
+    # increment the comicnum so we don't get repeated alerts
+    update_comicnum()
     emsg = MIMEText(msg)
     emsg['Subject'] = 'trigramosaurus error!'
     emsg['From'] = 'kaytwo@kaytwo.org'
@@ -57,6 +59,13 @@ def post_to_twitter(msg):
   except:
     error_out("some sort of twitter error")
   return result
+
+def update_comicnum():
+  cn = open('trigramosaurus.txt','r+')
+  curnum = int(cn.read().strip())
+  cn.truncate()
+  cn.write(str(curnum+1))
+  cn.close()
 
 if __name__ == "__main__":
   trigram_info = open('trigramosaurus.txt','r')
@@ -87,7 +96,6 @@ if __name__ == "__main__":
   if not anything:
     error_out('words in this trigram are weird: %s' % trigram,True)
   result = post_to_twitter(trigram)
-  print trigram
   infofile = open('trigramosaurus.txt','w')
   infofile.write(str(comicnum))
   infofile.close()
