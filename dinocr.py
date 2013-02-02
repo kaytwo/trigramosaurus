@@ -4,6 +4,7 @@ import sys
 import pickle
 from collections import defaultdict
 import Image, StringIO, sqlite3
+from operator import itemgetter
 
 ''' helper functions'''
 
@@ -148,7 +149,8 @@ class Dinocr:
      (128, 128, 128, 255): 'Ryan',
      (255, 0, 255, 255): 'border',
      (255, 106, 0, 255): 'Girl',
-     (255, 216, 0, 255): 'Car'
+     (255, 216, 0, 255): 'Car',
+     (123,123,123,255): 'ERROR'
      }
  
   textcolors = {
@@ -535,12 +537,13 @@ class Dinocr:
 
 
   def __init__(self,filename):
+    self.unsureness = 0
     self.panel_texts = []
     self.callouts = []
     self.imgname = filename
     self.erased_pixels = 0
     self.comic_text = DinosaurComic(filename)
-    self.stanza_colors = {}
+    self.stanza_colors = {(255,255,100,255):Stanza('DINOCR ERROR TEXT',(0,0,0,255),(255,255,100,255))}
     
     cutpoints = []
     cutpoints.append((0,0,242,242))
@@ -568,6 +571,7 @@ class Dinocr:
     continuations = []
     for callout in self.callouts:
       talker,talkee = self.find_talkers(callout)
+      # print talker,talkee
       if talker in self.stanza_colors and talkee in self.stanza_colors:
         continuations.append((talker,talkee))
         continue
@@ -607,38 +611,89 @@ class Dinocr:
   def find_talkers(self,callout):
     closest_colors = []
     talkpair = []
-    # closest_colors.append(self.find_closest_color(callout[0],callout[1]))
-    # closest_colors.append(self.find_closest_color(callout[1],callout[0]))
-    for edge in callout:
-      closest_colors.append(self.find_closest_color(edge))
-    for c in closest_colors:
-      if c in Dinocr.colors:
-        talkpair.append(c)
-      elif c in self.stanza_colors:
-        talkpair.append(c)
-    if all(t in self.stanza_colors for t in talkpair):
-      # a continuation to be fixed
-      print "fix this continuation:",talkpair
-      return talkpair
-    if all(t in Dinocr.colors for t in talkpair):
-      # weird error, just leave shit unknown and bomb out
-      return "callout detection error","callout detection error"
-    if talkpair[0] in Dinocr.colors:
-      return Dinocr.colors[talkpair[0]],self.stanza_colors[talkpair[1]]
+    for vertex in callout:
+      c,r = self.find_closest_dinocolor(vertex)
+      closest_colors.append(
+        { 'vertex':vertex,
+          'color':c,
+          'radius':r})
+      c,r = self.find_closest_stanzacolor(vertex)
+      closest_colors.append(
+        { 'vertex':vertex,
+          'color':c,
+          'radius':r})
+    closest_colors.sort(key=itemgetter('radius'))
+    print `closest_colors`
+    # if the "best matches" by radius are on different vertices
+    # (opposite ends of the callout), and point at a dino and
+    # a stanza, this is the expected case and we're done
+    if closest_colors[0]['vertex'] != closest_colors[1]['vertex']:
+      if (closest_colors[0]['color'] in Dinocr.colors and \
+          closest_colors[1]['color'] in self.stanza_colors):
+        return Dinocr.colors[closest_colors[0]['color']], \
+               self.stanza_colors[closest_colors[1]['color']]
+      if (closest_colors[1]['color'] in Dinocr.colors and \
+         closest_colors[0]['color'] in self.stanza_colors):
+        return Dinocr.colors[closest_colors[1]['color']], \
+               self.stanza_colors[closest_colors[0]['color']]
+      # here, both closest colors are guaranteed to be equal
+      if closest_colors[0]['color'] in self.stanza_colors:
+        # this is a continuation
+        return closest_colors[0]['color'],closest_colors[1]['color']
+      else:
+        # here, both closest colors are dinosaurs. They may be the 
+        # same dino, or they may be different. the outcome is
+        # the same in either case: set absolute closest dino
+        # to talker, and 3rd closest thing (guaranteed to be a stanza)
+        # to the talkee. bump the unsureness by a lot if 
+        # two diff dinos are closest to the respective vertices
+        if closest_colors[0]['color'] == closest_colors[1]['color']:
+          self.unsureness += 1
+        else:
+          self.unsureness += 10
+        return Dinocr.colors[closest_colors[0]['color']], \
+            self.stanza_colors[closest_colors[2]['color']]
     else:
-      return Dinocr.colors[talkpair[1]],self.stanza_colors[talkpair[0]]
+      # here, the two absolute closest "things" were close to the same
+      # vertex. just punt and set closest dino to furthest text, and i'll 
+      # see if that makes sense dynamically.
+      self.unsureness += 100
+      if closest_colors[0]['color'] in Dinocr.colors:
+        retdino = Dinocr.colors[closest_colors[0]['color']]
+      else:
+        retdino = Dinocr.colors[closest_colors[1]['color']]
+      if closest_colors[2]['color'] in self.stanza_colors:
+        retstanza = self.stanza_colors[closest_colors[2]['color']]
+      else:
+        retstanza = self.stanza_colors[closest_colors[3]['color']]
+      return retdino,retstanza
 
   
-  def find_closest_color(self,vertex):
+  def find_closest_color(self,vertex,acceptable_colors=None):
+    if acceptable_colors == None:
+      acceptable_colors=(Dinocr.colors,self.stanza_colors)
     for radius in range(25):
       x,y = vertex
       for p in Dinocr.circle(x,y,radius):
-        pixel_color = self.pix[p]
-        self.pix[p] = (0x88,0x88,0x88,0xff)
-        if pixel_color in Dinocr.colors or pixel_color in self.stanza_colors:
-          return pixel_color
+        try:
+          pixel_color = self.pix[p]
+          self.pix[p] = (0x88,0x88,0x88,0xff)
+        except IndexError:
+          pixel_color = (255,255,255,255)
+        print "testing for existance of pixel_color",pixel_color
+        for x in acceptable_colors:
+          print `x`
+        if any([pixel_color in x for x in acceptable_colors]):
+          return pixel_color,radius
+    # special error color
+    return (255,255,100,255),500
 
+  def find_closest_dinocolor(self,vertex):
+    return self.find_closest_color(vertex,acceptable_colors=(Dinocr.colors,))
 
+  def find_closest_stanzacolor(self,vertex):
+    '''might never be used'''
+    return self.find_closest_color(vertex,acceptable_colors=(self.stanza_colors,))
 
   def print_comic(self):
     print self.comic_text
