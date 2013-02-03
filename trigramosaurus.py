@@ -82,7 +82,10 @@ def update_comicnum(today):
     error_out("couldn't read comic number: "+e.message,True)
 
 if __name__ == "__main__":
-  today_comic = urlopen('http://www.qwantz.com/index.php')
+  comicid = ''
+  if len(sys.argv) == 2:
+    comicid = '?comic=' + str(sys.argv[1])
+  today_comic = urlopen('http://www.qwantz.com/index.php' + comicid)
   result = today_comic.read()
   todayparsed = fromstring(result)
   try:
@@ -90,15 +93,16 @@ if __name__ == "__main__":
     comicnum = int(re.findall(r'comic2-([0-9]+)\.png',comicurl)[0])
   except Exception as e:
     error_out("failed parsing qwantz.com: " + e.message,True)
-  prev_comic = update_comicnum(comicnum)
-  if comicnum == prev_comic:
-    error_out("same comic")
-  if comicnum != prev_comic + 1:
-    error_out("unexpected comic number: previous was %d, this was %d" % (prev_comic,comicnum),True)
+  if comicid == '':
+    prev_comic = update_comicnum(comicnum)
+    if comicnum == prev_comic:
+      error_out("same comic")
+    if comicnum != prev_comic + 1:
+      error_out("unexpected comic number: previous was %d, this was %d" % (prev_comic,comicnum),True)
   system('curl %s > /tmp/comic.png' % comicurl)
   d = Dinocr('/tmp/comic.png')
   if d.erased_pixels > 2000:
-    error_out('large amount of erases in a new comic',True)
+    error_out('large amount of erases in a new comic (%d erases, %d uncertainty)' % (d.erased_pixels,d.uncertainty),True)
   trigram = d.choose_random_trigram()
   anything = False
   # don't acept a trigram that has a non-alphanumeric word in it

@@ -869,7 +869,7 @@ class Dinocr:
   def choose_random_trigram(self):
     import random
     ''' return a trigram, trigramosaurus style'''
-    comic_words = self.comic_text.text()
+    comic_words = self.comic_text.text().split(' ')
     trigram_start = random.randint(0,len(comic_words)-3)
     trigram = ' '.join(comic_words[trigram_start:trigram_start+3])
     return trigram
