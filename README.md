@@ -32,8 +32,20 @@ callout detection
 "something went wrong" detection ✓
   need a proper/standard way to report this
 
+
+uncertainty
+===========
+
+uncertainty is a measure of how much went wrong during transcription.
+if uncertainty = 0, i'm reasonably sure that the transcription is correct.
+things that increase uncertainty:
+a contiguous area was erased that wasn't all black
+
+
 todos
 =====
+
+denote italics in text version, right now that info is dropped
 
 recursive callouts
 

@@ -179,38 +179,73 @@ class Dinocr:
     this_line = []
     for y in range(height):
       for x in range(width):
-        # print "(%d,%d) color: %s" % (x+startx,y+starty,str(self.pix[x+startx,y+starty]))
-        if self.pix[x+startx,y+starty] in Dinocr.textcolors:
-          # print "testing for text at (%d,%d)" % (x+startx,y+starty)
-          # print("found top leftmost black pixel at %d,%d" % (x,y))
-          return startx+x,starty+y
+        thispix = self.pix[x+startx,y+starty]
+        if thispix in Dinocr.colors or \
+           thispix in self.stanza_colors or \
+           thispix == (255,255,255,255):
+          continue
+        # if thispix in Dinocr.textcolors:
+        return startx+x,starty+y
     return -1,-1
+  
+  
+  def should_erase(self,color):
+    if color in Dinocr.colors or color == (255,255,255,255) \
+        or color in self.stanza_colors:
+      return False
+    return True
 
   def erase_contiguous(self,x,y):
     '''
-    recursively blank every same color pixel that is adjacent to this pixel
+    recursively blank every non-white, non-border pixel
+    that is adjacent to this pixel
+
+    increase uncertainty if any of the pixels is not black or devil color.
+
+    return None if bbox doesn't work out or color not (black/devil). 
+    this is evidence the blob isn't a callout.
     '''
+    erased = []
+    # minx, miny, maxx, maxy
+    bbox = [-1,-1,-1,-1]
     this_pixel_color = self.pix[x,y]
     miny = (x,y)
     maxy = (x,y)
+    bbox = [x,y,x,y]
     pending_wipe = [(x,y)]
     while len(pending_wipe) > 0:
       x,y = pending_wipe.pop()
-      if y < miny[1]:
-        miny = (x,y)
-      elif y > maxy[1]:
-        maxy = (x,y)
-      self.pix[x,y] = (255,255,255,255)
+      erased.append((x,y))
+      if y < bbox[1]:
+        bbox[1] = y
+      if y > bbox[3]:
+        bbox[3] = y
+      if x < bbox[0]:
+        bbox[0] = x
+      if x > bbox[2]:
+        bbox[2] = x
+      if self.pix[x,y] not in Dinocr.textcolors and self.pix[x,y] != (255,255,255,255):
+        print "increased uncertainty because i erased color:",self.pix[x,y]
+        self.uncertainty += 1
+        self.pix[x,y] = (255,0,255,255)
+      else:
+        self.pix[x,y] = (255,255,255,255)
       self.erased_pixels += 1
-      if self.pix[x-1,y] == this_pixel_color:
+      if self.should_erase(self.pix[x-1,y]):
         pending_wipe.append((x-1,y))
-      if self.pix[x+1,y] == this_pixel_color:
+      if self.should_erase(self.pix[x+1,y]):
         pending_wipe.append((x+1,y))
-      if self.pix[x,y-1] == this_pixel_color:
+      if self.should_erase(self.pix[x,y-1]):
         pending_wipe.append((x,y-1))
-      if self.pix[x,y+1] == this_pixel_color:
+      if self.should_erase(self.pix[x,y+1]):
         pending_wipe.append((x,y+1))
-    return (miny,maxy)
+    if (bbox[0],bbox[1]) in erased and (bbox[2],bbox[3]) in erased:
+      return (bbox[0],bbox[1]),(bbox[2],bbox[3])
+    elif (bbox[0],bbox[3]) in erased and (bbox[2],bbox[1]) in erased:
+      return (bbox[0],bbox[3]),(bbox[2],bbox[1])
+    print "increased uncertainty because of bad bbox on erase:",bbox
+    self.uncertainty += 1
+    return None
 
   def erase_bold_character_area(self,x,y,color):
     '''blank the 9x13 area starting at (x,y)'''
@@ -494,7 +529,9 @@ class Dinocr:
         continue
       if letter == '':
         # print "had to erase at",startx,starty
-        self.callouts.append(self.erase_contiguous(startx,starty))
+        retval = self.erase_contiguous(startx,starty)
+        if retval:
+          self.callouts.append(retval)
         continue
     return d
 
@@ -537,7 +574,7 @@ class Dinocr:
 
 
   def __init__(self,filename):
-    self.unsureness = 0
+    self.uncertainty = 0
     self.panel_texts = []
     self.callouts = []
     self.imgname = filename
@@ -571,12 +608,13 @@ class Dinocr:
     continuations = []
     for callout in self.callouts:
       talker,talkee = self.find_talkers(callout)
-      # print talker,talkee
-      if talker in self.stanza_colors and talkee in self.stanza_colors:
-        continuations.append((talker,talkee))
+      if talker == 'continuation':
+        continuations.append(talkee)
         continue
-      if talkee == 'unknown :(':
+      if talker == (255,255,100,255):
         continue
+      talker = Dinocr.colors[talker]
+      talkee = self.stanza_colors[talkee]
       if talker == 'border':
         if talkee.is_bold:
           talker_color = Dinocr.textcolors[talkee.text_color]
@@ -587,102 +625,97 @@ class Dinocr:
         else:
           talker = 'out of frame'
       talkee.speaker = talker
-    print continuations
-    for c in continuations:
-      if self.stanza_colors[c[0]].speaker == 'unknown':
-        print "setting speaker to " + `self.stanza_colors[c[1]].speaker`
-        self.stanza_colors[c[0]].speaker = self.stanza_colors[c[1]].speaker
-      elif self.stanza_colors[c[1]].speaker == 'unknown':
-        print "setting speaker to " + `self.stanza_colors[c[0]].speaker`
-        self.stanza_colors[c[1]].speaker = self.stanza_colors[c[0]].speaker
-      else:
-        print "continuation fixing borked"
-
-      
+    progress = True
+    while progress:
+      progress = False
+      for c in continuations:
+        c0 = self.stanza_colors[c[0]]
+        c1 = self.stanza_colors[c[1]]
+        if c0.speaker != 'unknown' and c1.speaker == 'unknown':
+          progress = True
+          c1.speaker = c0.speaker
+          # print "setting speaker for %s to %s"%(c1,c0)
+          continue
+        if c1.speaker != 'unknown' and c0.speaker == 'unknown':
+          progress = True
+          c0.speaker = c1.speaker
+          # print "setting speaker for %s to %s"%(c0,c1)
 
     for stanza in self.comic_text.stanzas():
       if stanza.speaker == 'unknown' and stanza.is_bold and stanza.text_color == (0,0,0,0xff):
         stanza.speaker = 'Narrator'
+      if stanza.speaker == 'unknown':
+        self.uncertainty += 100
     # print self.comic_text
     self.comic_png.save('busted_2217.png','PNG')
 
-
-
   def find_talkers(self,callout):
-    closest_colors = []
+    '''
+    input: p1, p2
+    intermediate value:
+    foreach p:
+      dino, dino_radius
+      stanza, stanza_radius
+      closest_thing = 'dino' if dr < sr else 'stanza'
+    if p1.closest != p2.closest:
+      dino on one side, stanza on other, match them up
+    if p1.closest = dino:
+      if dinos are same, return dino, min distance stanza
+      if dinos are diff, return closest dino, opp side stanza
+    if p1.closest = stanza:
+      for now, set talker to "whoever said stanza #X" to bugtest
+    '''
+    cc = []
     talkpair = []
     for vertex in callout:
       c,r = self.find_closest_dinocolor(vertex)
-      closest_colors.append(
-        { 'vertex':vertex,
-          'color':c,
-          'radius':r})
-      c,r = self.find_closest_stanzacolor(vertex)
-      closest_colors.append(
-        { 'vertex':vertex,
-          'color':c,
-          'radius':r})
-    closest_colors.sort(key=itemgetter('radius'))
-    print `closest_colors`
-    # if the "best matches" by radius are on different vertices
-    # (opposite ends of the callout), and point at a dino and
-    # a stanza, this is the expected case and we're done
-    if closest_colors[0]['vertex'] != closest_colors[1]['vertex']:
-      if (closest_colors[0]['color'] in Dinocr.colors and \
-          closest_colors[1]['color'] in self.stanza_colors):
-        return Dinocr.colors[closest_colors[0]['color']], \
-               self.stanza_colors[closest_colors[1]['color']]
-      if (closest_colors[1]['color'] in Dinocr.colors and \
-         closest_colors[0]['color'] in self.stanza_colors):
-        return Dinocr.colors[closest_colors[1]['color']], \
-               self.stanza_colors[closest_colors[0]['color']]
-      # here, both closest colors are guaranteed to be equal
-      if closest_colors[0]['color'] in self.stanza_colors:
-        # this is a continuation
-        return closest_colors[0]['color'],closest_colors[1]['color']
+      c1,r1 = self.find_closest_stanzacolor(vertex)
+      if r < r1:
+        closest = 'dino'
       else:
-        # here, both closest colors are dinosaurs. They may be the 
-        # same dino, or they may be different. the outcome is
-        # the same in either case: set absolute closest dino
-        # to talker, and 3rd closest thing (guaranteed to be a stanza)
-        # to the talkee. bump the unsureness by a lot if 
-        # two diff dinos are closest to the respective vertices
-        if closest_colors[0]['color'] == closest_colors[1]['color']:
-          self.unsureness += 1
+        closest = 'stanza'
+      cc.append(
+          {'dino':c,'dino_radius':r,'stanza':c1,'stanza_radius':r1,'closest':closest})
+    if cc[0]['closest'] != cc[1]['closest']:
+      if cc[0]['closest'] == 'dino':
+        return cc[0]['dino'],cc[1]['stanza']
+      else:
+        return cc[1]['dino'],cc[0]['stanza']
+    elif cc[0]['closest'] == 'dino':
+      if cc[0]['dino'] == cc[1]['dino']:
+        if cc[0]['stanza_radius'] < cc[1]['stanza_radius']:
+          return cc[0]['dino'],cc[0]['stanza']
         else:
-          self.unsureness += 10
-        return Dinocr.colors[closest_colors[0]['color']], \
-            self.stanza_colors[closest_colors[2]['color']]
-    else:
-      # here, the two absolute closest "things" were close to the same
-      # vertex. just punt and set closest dino to furthest text, and i'll 
-      # see if that makes sense dynamically.
-      self.unsureness += 100
-      if closest_colors[0]['color'] in Dinocr.colors:
-        retdino = Dinocr.colors[closest_colors[0]['color']]
+          return cc[1]['dino'],cc[1]['stanza']
       else:
-        retdino = Dinocr.colors[closest_colors[1]['color']]
-      if closest_colors[2]['color'] in self.stanza_colors:
-        retstanza = self.stanza_colors[closest_colors[2]['color']]
+        if cc[0]['dino_radius'] < cc[1]['dino_radius']:
+          return cc[0]['dino'],cc[1]['stanza']
+        else:
+          return cc[1]['dino'],cc[0]['stanza']
+    else: # closest to both ends is a stanza,
+      if cc[0]['stanza'] == cc[1]['stanza']:
+        # same stanza, return closest dino, that stanza
+        if cc[0]['dino_radius'] < cc[1]['dino_radius']:
+          return cc[0]['dino'],cc[0]['stanza']
+        else:
+          return cc[1]['dino'],cc[1]['stanza']
       else:
-        retstanza = self.stanza_colors[closest_colors[3]['color']]
-      return retdino,retstanza
+        # print "adding continuation: %s to %s" % (cc[0],cc[1])
+        return 'continuation',(cc[0]['stanza'],cc[1]['stanza'])
 
-  
+
   def find_closest_color(self,vertex,acceptable_colors=None):
     if acceptable_colors == None:
       acceptable_colors=(Dinocr.colors,self.stanza_colors)
-    for radius in range(25):
+    for radius in range(50):
       x,y = vertex
       for p in Dinocr.circle(x,y,radius):
         try:
           pixel_color = self.pix[p]
-          self.pix[p] = (0x88,0x88,0x88,0xff)
+          # self.pix[p] = (0x88,0x88,0x88,0xff)
         except IndexError:
-          pixel_color = (255,255,255,255)
-        print "testing for existance of pixel_color",pixel_color
-        for x in acceptable_colors:
-          print `x`
+          # off canvas, ignore
+          continue
         if any([pixel_color in x for x in acceptable_colors]):
           return pixel_color,radius
     # special error color
@@ -728,5 +761,6 @@ if __name__ == '__main__':
     filename = "test_bold_italic.png"
   d = Dinocr(filename)
   d.print_comic()
+  print "uncertainty:",d.uncertainty
   # d.store_comic_to_db()
   # print d.choose_random_trigram()
