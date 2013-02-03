@@ -26,7 +26,8 @@ WIPs
 accented characters (at least those used in french)
   grave e and acute e done because they're in my test suite
 
-callout detection
+callout detection✓
+
   works
 
 "something went wrong" detection ✓

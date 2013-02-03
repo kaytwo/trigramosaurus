@@ -4,6 +4,7 @@ import sys
 import pickle
 from collections import defaultdict
 import Image, StringIO, sqlite3
+from lxml import etree
 from operator import itemgetter
 
 ''' helper functions'''
@@ -140,6 +141,22 @@ class Dinocr:
   charmap_bold = open('charmap_bold.pkl','rb')
   charmap_italic = open('charmap_italic.pkl','rb')
   
+
+  @staticmethod
+  def printascii(s):
+    for letter in s:
+      big = Dinocr.charmap[letter]
+      offset = 0
+      for y in range(13):
+        for x in range(8):
+          if big[0][offset] == 1:
+            sys.stdout.write(' ')
+          else:
+            sys.stdout.write('X')
+          offset += 1
+        print ""
+      print ""
+    
   colors = {
      (0, 38, 255, 255): 'Dromiceiomimus',
      (0, 148, 255, 255): 'House',
@@ -225,25 +242,28 @@ class Dinocr:
       if x > bbox[2]:
         bbox[2] = x
       if self.pix[x,y] not in Dinocr.textcolors and self.pix[x,y] != (255,255,255,255):
-        print "increased uncertainty because i erased color:",self.pix[x,y]
+        # print "increased uncertainty because i erased color:",self.pix[x,y]
         self.uncertainty += 1
         self.pix[x,y] = (255,0,255,255)
       else:
         self.pix[x,y] = (255,255,255,255)
       self.erased_pixels += 1
-      if self.should_erase(self.pix[x-1,y]):
-        pending_wipe.append((x-1,y))
-      if self.should_erase(self.pix[x+1,y]):
-        pending_wipe.append((x+1,y))
-      if self.should_erase(self.pix[x,y-1]):
-        pending_wipe.append((x,y-1))
-      if self.should_erase(self.pix[x,y+1]):
-        pending_wipe.append((x,y+1))
+      try:
+        if self.should_erase(self.pix[x-1,y]):
+          pending_wipe.append((x-1,y))
+        if self.should_erase(self.pix[x+1,y]):
+          pending_wipe.append((x+1,y))
+        if self.should_erase(self.pix[x,y-1]):
+          pending_wipe.append((x,y-1))
+        if self.should_erase(self.pix[x,y+1]):
+          pending_wipe.append((x,y+1))
+      except IndexError:
+        continue
     if (bbox[0],bbox[1]) in erased and (bbox[2],bbox[3]) in erased:
       return (bbox[0],bbox[1]),(bbox[2],bbox[3])
     elif (bbox[0],bbox[3]) in erased and (bbox[2],bbox[1]) in erased:
       return (bbox[0],bbox[3]),(bbox[2],bbox[1])
-    print "increased uncertainty because of bad bbox on erase:",bbox
+    # print "increased uncertainty because of bad bbox on erase:",bbox
     self.uncertainty += 1
     return None
 
@@ -251,20 +271,28 @@ class Dinocr:
     '''blank the 9x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(9):
-        self.pix[x+x1,y+y1] = color
+        try:
+          self.pix[x+x1,y+y1] = color
+        except IndexError:
+          continue
 
   def erase_italic_character_area(self,x,y,color):
     '''blank the 8x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(8):
-        self.pix[x+x1 + Dinocr.italic_offset[y1],y+y1] = color
+        try:
+          self.pix[x+x1 + Dinocr.italic_offset[y1],y+y1] = color
+        except IndexError:
+          continue
 
   def erase_character_area(self,x,y,color):
     '''blank the 8x13 area starting at (x,y)'''
     for y1 in range(13):
       for x1 in range(8):
-        self.pix[x+x1,y+y1] = color
-
+        try:
+          self.pix[x+x1,y+y1] = color
+        except IndexError:
+          continue
   def match_with_italic_character(self,x,y,origin=False,erase_color=(255,255,255,255)):
     '''
     with origin = true, (x,y) denotes the origin of where we expect
@@ -340,11 +368,14 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(8):
-          if self.pix[x+x1,y+y1] in self.textcolors.keys():
-            old_color = self.pix[x+x1,y+y1]
-            c = 0
-          else:
-            c = 1
+          try:
+            if self.pix[x+x1,y+y1] in self.textcolors.keys():
+              old_color = self.pix[x+x1,y+y1]
+              c = 0
+            else:
+              c = 1
+          except IndexError:
+            return (' ',old_color), -1, -1
           new_char.append(c)
       # printmap(new_char)
       # print tuple(new_char)
@@ -396,12 +427,16 @@ class Dinocr:
       new_char = []
       for y1 in range(13):
         for x1 in range(9):
-          if self.pix[x+x1,y+y1] in self.textcolors.keys():
-            c = 0
-            old_color = self.pix[x+x1,y+y1]
-          else:
-            c = 1
-          new_char.append(c)
+          try:
+
+            if self.pix[x+x1,y+y1] in self.textcolors.keys():
+              c = 0
+              old_color = self.pix[x+x1,y+y1]
+            else:
+              c = 1
+            new_char.append(c)
+          except IndexError:
+            return (' ',None),-1,-1
       if tuple(new_char) in Dinocr.bold_revmap:
         # print "found bold character",Dinocr.bold_revmap[tuple(new_char)],"at",str(x),str(y)
         self.erase_bold_character_area(x,y,erase_color)
@@ -499,6 +534,7 @@ class Dinocr:
     # increment the B in this color for each stanza to uniqueify them
     while True:
       startx,starty = self.find_first_pixel(bbox)
+      # print "found new pixel at (%d,%d)" % (startx,starty)
       if startx < 0:
         break
       is_italic = False
@@ -512,21 +548,28 @@ class Dinocr:
         # print "found normal/italic letter %s" % letter
         this_color = tuple(self.stanza_color)
         text,text_color = self.find_aligned(originx,originy,bbox,this_color)
-        s = Stanza(text,text_color,this_color,is_bold=is_bold,is_italic=is_italic)
-        self.stanza_colors[this_color] = s
-        d.stanzas.append(s)
-        self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
-        continue
+        if len(''.join(text).strip()) == 0:
+          letter = ''
+        else:
+          s = Stanza(text,text_color,this_color,is_bold=is_bold,is_italic=is_italic)
+          self.stanza_colors[this_color] = s
+          d.stanzas.append(s)
+          self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
+          # self.comic_png.save('busted','PNG')
+          continue
       (letter,text_color), originx,originy = self.match_with_bold_character(startx,starty)
       if letter != '':
         # print "found bold letter %s" % letter
         this_color = tuple(self.stanza_color)
         text,text_color = self.find_aligned_bold(originx,originy,bbox,this_color)
-        s = Stanza(text,text_color,this_color,is_bold=True,is_italic=False)
-        self.stanza_colors[this_color] = s
-        d.stanzas.append(s)
-        self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
-        continue
+        if len(''.join(text).strip()) == 0:
+          letter = ''
+        else:
+          s = Stanza(text,text_color,this_color,is_bold=True,is_italic=False)
+          self.stanza_colors[this_color] = s
+          d.stanzas.append(s)
+          self.stanza_color = (255,255,self.stanza_color[2] + 1,255)
+          continue
       if letter == '':
         # print "had to erase at",startx,starty
         retval = self.erase_contiguous(startx,starty)
@@ -573,7 +616,8 @@ class Dinocr:
 
 
 
-  def __init__(self,filename):
+  def __init__(self,filename,url="unknown", title="unknown",mouseover_text='unknown',subject_text='unknown'):
+    # filename can also be an fd
     self.uncertainty = 0
     self.panel_texts = []
     self.callouts = []
@@ -581,6 +625,12 @@ class Dinocr:
     self.erased_pixels = 0
     self.comic_text = DinosaurComic(filename)
     self.stanza_colors = {(255,255,100,255):Stanza('DINOCR ERROR TEXT',(0,0,0,255),(255,255,100,255))}
+    self.url = url
+    self.title = title
+    self.mouseover_text = mouseover_text
+    self.subject_text = subject_text
+    self.new_xml = None
+    self.old_xml = None
     
     cutpoints = []
     cutpoints.append((0,0,242,242))
@@ -595,9 +645,12 @@ class Dinocr:
     mask_png  = Image.open("dinocolors.png").convert('RGBA')
     comic_png = Image.open(filename).convert('RGBA')
 
-    comic_png.paste(mask_png,mask_png)
-    self.comic_png = comic_png
-    self.pix = self.comic_png.load()
+    try:
+      comic_png.paste(mask_png,mask_png)
+      self.comic_png = comic_png
+      self.pix = self.comic_png.load()
+    except ValueError:
+      return
     self.stanza_color = (255,255,0,255)
     for bbox in cutpoints:
       r = self.ocr_current_panel(bbox)
@@ -626,6 +679,7 @@ class Dinocr:
           talker = 'out of frame'
       talkee.speaker = talker
     progress = True
+    numfixed = 0
     while progress:
       progress = False
       for c in continuations:
@@ -633,13 +687,18 @@ class Dinocr:
         c1 = self.stanza_colors[c[1]]
         if c0.speaker != 'unknown' and c1.speaker == 'unknown':
           progress = True
+          numfixed += 1
           c1.speaker = c0.speaker
           # print "setting speaker for %s to %s"%(c1,c0)
           continue
         if c1.speaker != 'unknown' and c0.speaker == 'unknown':
           progress = True
+          numfixed += 1
           c0.speaker = c1.speaker
           # print "setting speaker for %s to %s"%(c0,c1)
+    if numfixed != len(continuations):
+      # print "leftover continuation booo"
+      self.uncertainty += 10
 
     for stanza in self.comic_text.stanzas():
       if stanza.speaker == 'unknown' and stanza.is_bold and stanza.text_color == (0,0,0,0xff):
@@ -647,7 +706,7 @@ class Dinocr:
       if stanza.speaker == 'unknown':
         self.uncertainty += 100
     # print self.comic_text
-    self.comic_png.save('busted_2217.png','PNG')
+    # self.comic_png.save('busted_2217.png','PNG')
 
   def find_talkers(self,callout):
     '''
@@ -745,6 +804,67 @@ class Dinocr:
         escaped_words = this_panel[line_num].replace("'","''")
         c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
     db.commit()
+
+  def generate_old_xml(self):
+    root = etree.Element('transcription')
+    elt = etree.Element('url')
+    elt.text = self.url
+    root.append(elt)
+    elt = etree.Element('title')
+    elt.text = self.title
+    root.append(elt)
+    body = etree.Element('body')
+    root.append(body)
+    p = etree.Element('panel')
+    body.append(p)
+    for stanza in self.comic_text.stanzas():
+      l = etree.Element('line')
+      l.text = "%s: %s" % (stanza.speaker, stanza.text())
+      p.append(l)
+    self.old_xml = root
+
+  def generate_new_xml(self):
+    root = etree.Element('transcription')
+    elt = etree.Element('url')
+    elt.text = self.url
+    root.append(elt)
+    elt = etree.Element('title')
+    elt.text = self.title
+    root.append(elt)
+    elt = etree.Element('subject')
+    elt.text = self.subject_text
+    root.append(elt)
+    elt = etree.Element('mouseover')
+    elt.text = self.mouseover_text
+    root.append(elt)
+    elt = etree.Element('uncertainty')
+    elt.text = str(self.uncertainty)
+    root.append(elt)
+    body = etree.Element('body')
+    root.append(body)
+    for panel in self.comic_text.panels:
+      p = etree.Element('panel')
+      body.append(p)
+      for stanza in panel.stanzas:
+        l = etree.Element('line')
+        l.text = "%s: %s" % (stanza.speaker, stanza.text())
+        p.append(l)
+    self.new_xml = root
+
+
+  def string_old_xml(self):
+    if not self.old_xml:
+      self.generate_old_xml()
+    return etree.tostring(self.old_xml, pretty_print=True)
+
+  def string_new_xml(self):
+    if not self.new_xml:
+      self.generate_new_xml()
+    return etree.tostring(self.new_xml, pretty_print=True)
+
+
+    
+
 
   def choose_random_trigram(self):
     import random
