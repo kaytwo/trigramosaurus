@@ -882,5 +882,6 @@ if __name__ == '__main__':
   d = Dinocr(filename)
   d.print_comic()
   print "uncertainty:",d.uncertainty
+  print d.string_new_xml()
   # d.store_comic_to_db()
   # print d.choose_random_trigram()
