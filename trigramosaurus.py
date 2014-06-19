@@ -5,7 +5,7 @@ from os import system
 import sys
 import re
 import twitter
-
+from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 
@@ -28,6 +28,14 @@ post to twitter
 
 
 def error_out(msg,alert=False):
+  # if datetime.now().year == 2014 and datetime.now().month == 4 and datetime.now().day <= 25:
+  #  print "guest week"
+  #   print msg
+  #   sys.exit()
+  if datetime.now().day == 1 and datetime.now().month == 4:
+    print "april fool!"
+    print msg
+    sys.exit()
   if alert:
     # increment the comicnum so we don't get repeated alerts
     emsg = MIMEText(msg)
@@ -56,7 +64,7 @@ def post_to_twitter(msg):
     result = t.statuses.update(status=msg)
   # invalid status causes twitter.api.TwitterHTTPError
   except:
-    error_out("some sort of twitter error")
+    error_out("some sort of twitter error",True)
   return result
 
 def update_comicnum(today):
