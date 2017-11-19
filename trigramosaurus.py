@@ -1,13 +1,17 @@
 from dinocr import Dinocr
 from lxml.html import fromstring
 from urllib2 import urlopen
-from os import system
 import sys
 import re
 import twitter
 from datetime import datetime
 import smtplib
+from cStringIO import StringIO
 from email.mime.text import MIMEText
+import webapp2
+import logging
+
+
 
 
 '''
@@ -43,8 +47,8 @@ def error_out(msg,alert=False):
     emsg['From'] = 'kaytwo@kaytwo.org'
     emsg['To'] = 'kaytwo@gmail.com'
     # this smtp server might change but oh well...
-    s = smtplib.SMTP('gmail-smtp-in.l.google.com')
-    s.sendmail(emsg['From'],[emsg['To']],emsg.as_string())
+    # s = smtplib.SMTP('gmail-smtp-in.l.google.com')
+    # s.sendmail(emsg['From'],[emsg['To']],emsg.as_string())
   else:
     print msg
   sys.exit()
@@ -89,10 +93,8 @@ def update_comicnum(today):
   except Exception as e:
     error_out("couldn't read comic number: "+e.message,True)
 
-if __name__ == "__main__":
+def main():
   comicid = ''
-  if len(sys.argv) == 2:
-    comicid = '?comic=' + str(sys.argv[1])
   today_comic = urlopen('http://www.qwantz.com/index.php' + comicid)
   result = today_comic.read()
   todayparsed = fromstring(result)
@@ -100,15 +102,13 @@ if __name__ == "__main__":
     comicurl = todayparsed.cssselect('img.comic')[0].attrib['src']
     comicnum = int(re.findall(r'comic2-([0-9]+)\.png',comicurl)[0])
   except Exception as e:
-    error_out("failed parsing qwantz.com: " + e.message,True)
-  if comicid == '':
-    prev_comic = update_comicnum(comicnum)
-    if comicnum == prev_comic:
-      error_out("same comic")
-    if comicnum != prev_comic + 1:
-      error_out("unexpected comic number: previous was %d, this was %d" % (prev_comic,comicnum),True)
-  system('curl %s > /tmp/comic.png' % comicurl)
-  d = Dinocr('/tmp/comic.png')
+    print "failed parsing qwantz.com: " + e.message
+  tmpfilep = StringIO()
+  comic_image = urlopen(comicurl).read()
+  tmpfilep.write(comic_image)
+  tmpfilep.seek(0)
+  logging.debug("wrote a file of length %d" % len(comic_image))
+  d = Dinocr(tmpfilep)
   if d.erased_pixels > 2000:
     error_out('large amount of erases in a new comic (%d erases, %d uncertainty)' % (d.erased_pixels,d.uncertainty),True)
   trigram = d.choose_random_trigram()
@@ -116,7 +116,17 @@ if __name__ == "__main__":
   # don't acept a trigram that has a non-alphanumeric word in it
   if any([all([not x.isalnum() for x in word]) for word in trigram.split()]):
     error_out('words in this trigram are weird: %s' % trigram,True)
-  result = post_to_twitter(trigram)
-  infofile = open('trigramosaurus.txt','w')
-  infofile.write(str(comicnum))
-  infofile.close()
+  return trigram
+  # result = post_to_twitter(trigram)
+
+class MainPage(webapp2.RequestHandler):
+    def get(self):
+        trigram = main()
+        post_to_twitter(trigram)
+        self.response.headers['Content-Type'] = 'text/plain'
+        self.response.write(trigram)
+
+
+app = webapp2.WSGIApplication([
+    ('/', MainPage),
+], debug=True)

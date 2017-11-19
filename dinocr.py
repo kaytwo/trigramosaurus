@@ -1,11 +1,10 @@
 # vim: set fileencoding=utf-8
 
-# this is a test edit
-
 import sys
 import pickle
 from collections import defaultdict
-import Image, StringIO, sqlite3
+from PIL import Image
+
 from lxml import etree
 from operator import itemgetter
 
@@ -117,7 +116,7 @@ class DinosaurComic:
  
   def __unicode__(self):
     return 'comic %s\n' % self.name + \
-      '\n'.join([unicode(x) for x in self.panels])
+ '\n'.join([unicode(x) for x in self.panels])
 
   def stanzas(self):
     for panel in self.panels:
@@ -623,9 +622,8 @@ class Dinocr:
     self.uncertainty = 0
     self.panel_texts = []
     self.callouts = []
-    self.imgname = filename
     self.erased_pixels = 0
-    self.comic_text = DinosaurComic(filename)
+    self.comic_text = DinosaurComic()
     self.stanza_colors = {(255,255,100,255):Stanza('DINOCR ERROR TEXT',(0,0,0,255),(255,255,100,255))}
     self.url = url
     self.title = title
@@ -791,21 +789,6 @@ class Dinocr:
 
   def print_comic(self):
     print self.comic_text
-
-  def store_comic_to_db(self,dbfile='comic.db'):
-    '''writes comic to comic.db'''
-    db = sqlite3.connect(dbfile)
-    c = db.cursor()
-    ''' TODO: create tables if file is empty'''
-    c.execute("insert into comics values(NULL,'%s')" % self.imgname)
-    c.execute("select last_insert_rowid()");
-    comic_id = c.fetchone()[0]
-    for panel_num in range(len(self.panel_texts)):
-      this_panel = self.panel_texts[panel_num]
-      for line_num in range(len(this_panel)):
-        escaped_words = this_panel[line_num].replace("'","''")
-        c.execute("insert into lines values(NULL,%d,%d,%d,'%s')" % (comic_id,panel_num+1,line_num+1,escaped_words))
-    db.commit()
 
   def generate_old_xml(self):
     root = etree.Element('transcription')
